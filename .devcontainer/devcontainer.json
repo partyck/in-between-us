@@ -1,0 +1,61 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the README at:
+// https://github.com/microsoft/vscode-dev-containers/tree/v0.231.0/containers/python-3
+// https://mcr.microsoft.com/v2/vscode/devcontainers/python/tags/list  -> list of available tags
+{
+	"name": "ChatIa",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": "..",
+		"args": {
+			"VARIANT": "1.1.14-3.11-bookworm"
+		}
+	},
+	"features": {},
+	"customizations": {
+		"vscode": {
+			"settings": {
+				"python.testing.unittestEnabled": false,
+				"python.testing.pytestEnabled": true,
+				"python.analysis.typeCheckingMode": "basic",
+				"editor.formatOnSave": true,
+				"[python]": {
+					"editor.defaultFormatter": "ms-python.black-formatter",
+					"editor.codeActionsOnSave": {
+						"source.organizeImports": "explicit"
+					}
+				},
+				"black-formatter.args": [
+					"--line-length",
+					"120"
+				],
+				"isort.args": [
+					"--profile",
+					"black"
+				]
+			},
+			"extensions": [
+				"ms-python.python",
+				"ms-python.debugpy",
+				"ms-python.isort",
+				"ms-python.black-formatter",
+				"ms-python.pylint",
+				"ms-python.vscode-pylance",
+				"mhutchie.git-graph",
+				"visualstudioexptteam.vscodeintellicode"
+			]
+		}
+	},
+	"forwardPorts": [
+		8080
+	],
+	"postCreateCommand": "sh ${containerWorkspaceFolder}/.devcontainer/postCreateCommand.sh",
+	"containerUser": "vscode",
+	"remoteUser": "vscode",
+	"containerEnv": {
+		"CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
+		"PYTHONPATH": "."
+	},
+	"mounts": [
+		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.devcontainer-shared/gcloud-config,target=/home/vscode/.devcontainer-shared/gcloud-config,type=bind"
+	]
+}
