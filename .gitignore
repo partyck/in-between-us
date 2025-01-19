@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.flaskenv
+*.pyc
+*.pyo
+env/
+venv36/
+.venv/
+env*
+.vscode
+
+tmp/
