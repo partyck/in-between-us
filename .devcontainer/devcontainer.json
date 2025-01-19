@@ -11,6 +11,10 @@
 		}
 	},
 	"features": {},
+	"runArgs": [
+		"-p",
+		"8080:8080"
+	],
 	"customizations": {
 		"vscode": {
 			"settings": {

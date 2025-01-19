@@ -14,6 +14,6 @@ gcloud auth list
 # Install python project libs
 printf "\nInstalling python libraries:\n\n"
 pip3 install --upgrade pip
-pip3 install --user -r requirements.txt
+pip3 install --user -r src/requirements.txt
 
 exit 0
