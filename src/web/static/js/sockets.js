@@ -9,16 +9,12 @@ class MySocket {
 
 
     listenSockets() {
-        this.socket.on('connect', function () {
-            console.log('Socket connected!');
+        this.socket.on('connect', function (data) {
+            console.log('Socket connected! ' + data);
         });
 
-        this.socket.on('click_2', function (data) {
-            console.log('click_2 received!');
-            console.log(data);
-            stroke(255);
-            fill(0, 255, 0);
-            ellipse(data.x + 50, data.y, 50, 50);
+        this.socket.on('response-message', function (data) {
+            messages.add(data.message, data.userName);
         });
     }
 
@@ -28,6 +24,13 @@ class MySocket {
             y: y
         });
         console.log('click send! x: ' + x + ' y: ' + y);
+    }
+
+    sendMessage(userName, message) {
+        this.socket.emit('send-message', {
+            userName,
+            message
+        });
     }
 
 }
