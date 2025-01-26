@@ -20,6 +20,8 @@ function setup() {
     currentScene = SCENES.LOGIN;
     messagesHeight = height * 0.9 - 30;
     textFont('Arial', 16);
+    textWrap(WORD);
+    textLeading(20);
 }
 
 function draw() {

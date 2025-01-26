@@ -1,8 +1,3 @@
-const SIDE = Object.freeze({
-    RECEIVER: Symbol("Receiver"),
-    SENDER: Symbol("Sender")
-});
-
 class Messages {
 
     constructor() {
@@ -28,7 +23,9 @@ class Messages {
     }
 
     add(message, newUserName) {
-        this.messages.push(new Message(message, newUserName));
+        let newMessage = new Message(message, newUserName)
+        this.messages.forEach((message) => { message.move(newMessage.height) });
+        this.messages.push(newMessage);
     }
 
     show() {
@@ -37,15 +34,16 @@ class Messages {
 
     display() {
         background(50);
-        this.messages.slice().reverse().forEach((message, index) => {
-            message.display(index);
+        this.messages.slice().reverse().forEach((message) => {
+            message.display();
         });
     }
 
     newMessage() {
         let message = messages.messageInput.value();
         if (message) {
-            mySocket.sendMessage(userName, message);
+            let messageHistory = messages.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
+            mySocket.sendMessage(userName, message, messageHistory);
             messages.messageInput.value("");
         }
     }
@@ -53,18 +51,66 @@ class Messages {
 
 class Message {
     constructor(content, newUserName) {
+        this.MAX_MESSAGE_WIDTH = width * 0.8;
+        this.MAX_MESSAGE_HEIGHT = height * 0.8;
         this.content = content;
-        this.side = newUserName === userName ? SIDE.SENDER : SIDE.RECEIVER;
-        if (this.side === SIDE.SENDER) {
+        this.userName = newUserName;
+        this.calculateTextWidthAndHeight();
+        this.y = this.MAX_MESSAGE_HEIGHT - this.height;
+
+        if (this.userName === userName) {
+            this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
             this.strokeColor = color(20, 100, 200);
         } else {
-            this.strokeColor = color(200, 200, 200);
+            this.x = 10;
+            this.strokeColor = color(150, 150, 150);
         }
     }
 
-    display(index) {
-        textWrap(WORD);
+    move(displacement) {
+        this.y = this.y - displacement - 20;
+    }
+
+    display() {
         fill(this.strokeColor);
-        text(this.content, 10, messagesHeight - height * 0.1 * index, width * 0.8);
+        noStroke();
+        let padding = 8;
+        rect(this.x - padding, this.y - padding, this.width + (padding * 2), this.height + (padding * 2), 15, 15, 15, 15);
+        fill(255);
+        text(this.content, this.x, this.y, this.MAX_MESSAGE_WIDTH);
+    }
+
+    calculateTextWidthAndHeight() {
+        const lines = this.content.split('\n');
+        let lineCount = 0;
+        let maxWidth = 0;
+
+        lines.forEach((paraf) => {
+            const words = paraf.split(' ');
+            let line = '';
+
+            for (let i = 0; i < words.length; i++) {
+                const testLine = line + words[i] + ' ';
+                const testLineWidth = textWidth(testLine);
+
+                if (testLineWidth > this.MAX_MESSAGE_WIDTH) {
+                    line = words[i] + ' ';
+                    lineCount++;
+                    maxWidth = this.MAX_MESSAGE_WIDTH;
+                } else {
+                    line = testLine;
+                }
+            }
+
+            if (line !== '') {
+                lineCount++;
+                maxWidth = Math.max(maxWidth, textWidth(line));
+            }
+        });
+
+        this.height = lineCount * textLeading();
+        this.width = maxWidth;
+
+        return lineCount * textLeading();
     }
 }

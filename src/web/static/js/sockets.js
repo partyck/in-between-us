@@ -18,18 +18,11 @@ class MySocket {
         });
     }
 
-    emitClick(x, y) {
-        this.socket.emit('click', {
-            x: x,
-            y: y
-        });
-        console.log('click send! x: ' + x + ' y: ' + y);
-    }
-
-    sendMessage(userName, message) {
+    sendMessage(userName, message, messageHistory) {
         this.socket.emit('send-message', {
             userName,
-            message
+            message,
+            messageHistory
         });
     }
 
