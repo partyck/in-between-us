@@ -5,7 +5,7 @@ from flask_socketio import SocketIO
 from openai import OpenAI
 
 from config import OPENIA_API_KEY
-from models import MessageResponse
+from models import MessageInput, MessageResponse
 
 app = Flask(__name__, static_url_path="", static_folder="web/static", template_folder="web/templates")
 
@@ -23,23 +23,28 @@ def on_connect():
 
 @socketio.on("send-message")
 def event_send_message(data):
+    new_message = MessageInput.from_json(data)
+    messages = [
+        {
+            "role": "developer",
+            "content": f'Based on the past conversation, rephrase the given message and make it sound with more love, and more trust like a couple that is in love. Do not use place holders. Message by {new_message.user_name} "{new_message.message}"',
+        },
+        {"role": "developer", "content": new_message.message_history},
+    ]
+
     completion = client.beta.chat.completions.parse(
-        model="gpt-4o-mini",
+        # model="gpt-4o-mini",
+        model="gpt-4o-2024-08-06",
         store=True,
-        messages=[
-            {
-                "role": "developer",
-                "content": "rewrite the given message and make it sound like it's directed to the love of their life.",
-            },
-            {"role": "user", "content": data.get("message")},
-        ],
-        response_format=MessageResponse,  # type: ignore
+        messages=messages,  # type: ignore
+        response_format=MessageResponse,
     )
-    message = completion.choices[0].message.parsed.message  # type: ignore
-    socketio.emit("response-message", {"message": message, "userName": data.get("userName")})
+    message = completion.choices[0].message.parsed
+    if isinstance(message, MessageResponse):
+        socketio.emit("response-message", {"message": message.message, "userName": new_message.user_name})
 
 
-@socketio.on("send-message1")
+@socketio.on("send-test")
 def event_send_message_test(data):
     socketio.emit("response-message", data)
 
@@ -53,5 +58,3 @@ def route_home():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     socketio.run(app, debug=True, port=port, host="0.0.0.0")
-    # app.run(debug=True, host="0.0.0.0", port=port)
-    # app.run(debug=True, host='0.0.0.0', port=port, ssl_context=("cert.pem", "key.pem"))
