@@ -41,11 +41,15 @@ def event_send_message(data):
     )
     message = completion.choices[0].message.parsed
     if isinstance(message, MessageResponse):
-        socketio.emit("response-message", {"message": message.message, "userName": new_message.user_name})
+        socketio.emit(
+            "response-message",
+            {"message": message.message, "userName": new_message.user_name, "prompt": new_message.message},
+        )
 
 
 @socketio.on("send-test")
 def event_send_message_test(data):
+    data["prompt"] = data["message"]
     socketio.emit("response-message", data)
 
 

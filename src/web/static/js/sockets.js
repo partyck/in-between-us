@@ -14,7 +14,7 @@ class MySocket {
         });
 
         this.socket.on('response-message', function (data) {
-            messages.add(data.message, data.userName);
+            messages.add(data.message, data.userName, data.prompt);
         });
     }
 
