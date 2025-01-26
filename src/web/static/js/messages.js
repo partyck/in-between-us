@@ -29,7 +29,11 @@ class Messages {
             });
             if (newMessage) {
                 let distance = newMessage.rephrase(message);
-                this.messages.forEach((message) => { message.y - distance });
+                this.messages.forEach((message) => {
+                    if (message.content !== newMessage.content) {
+                        message.y = message.y + distance;
+                    }
+                });
             }
         } else {
             let newMessage = new Message(message, newUserName)
@@ -93,7 +97,7 @@ class Message {
         this.animation_s = 50;
         this.bgColor = color(20, 100, 200);
         this.strokeColor = color(255);
-        return this.height - old_height;
+        return old_height - this.height;
     }
 
     move(displacement) {
