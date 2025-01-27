@@ -5,8 +5,6 @@ let login;
 let userName;
 let currentScene;
 
-let messagesHeight;
-
 const SCENES = Object.freeze({
     LOGIN: Symbol("Login"),
     CHAT: Symbol("Chat")
@@ -18,7 +16,6 @@ function setup() {
     messages = new Messages();
     login = new LoginScene();
     currentScene = SCENES.LOGIN;
-    messagesHeight = height * 0.9 - 30;
     textFont('Arial', 16);
     textWrap(WORD);
     textLeading(20);

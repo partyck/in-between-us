@@ -33,7 +33,7 @@ textarea {
 }
 
 .name-input:focus {
-    border-color: #10a37f;
+    border-color: #0015ff;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     outline: none;
 }
@@ -90,7 +90,7 @@ textarea {
     max-width: 600px;
     background-color: #585656;
     color: #ffffff;
-    border: 1px solid #d1d5db;
+    border: 1px solid #0015ff;
     border-radius: 12px;
     padding: 12px 16px;
     font-size: 16px;
@@ -101,7 +101,7 @@ textarea {
 }
 
 .chat-input:focus {
-    border-color: #10a37f;
+    border-color: #0015ff;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     outline: none;
 }
