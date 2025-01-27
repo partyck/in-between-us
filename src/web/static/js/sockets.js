@@ -2,8 +2,6 @@ class MySocket {
 
     constructor() {
         this.socket = io();
-        this.isResetValues = false;
-        this.distance = { alpha: 0, beta: 0, gamma: 0 };
         this.listenSockets();
     }
 
