@@ -25,11 +25,11 @@ def on_connect():
 def event_send_message(data):
     new_message = MessageInput.from_json(data)
     messages = [
+        {"role": "developer", "content": new_message.message_history},
         {
             "role": "developer",
-            "content": f'Based on the past conversation, rephrase the given message and make it sound with more love, and more trust like a couple that is in love. Do not use place holders. Message by {new_message.user_name} "{new_message.message}"',
+            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound more assertive and kind. Do not change the meaning and do not use place holders.',
         },
-        {"role": "developer", "content": new_message.message_history},
     ]
 
     completion = client.beta.chat.completions.parse(
