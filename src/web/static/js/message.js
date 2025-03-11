@@ -15,8 +15,8 @@ class Message {
             this.strokeColor = color(50);
         } else {
             this.x = 10;
-            this.bgColor = color(150, 150, 150);
-            this.strokeColor = color(255);
+            this.bgColor = color(200);
+            this.strokeColor = color(10);
         }
     }
 

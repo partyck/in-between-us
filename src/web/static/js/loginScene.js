@@ -1,7 +1,7 @@
 class LoginScene {
 
     constructor() {
-        this.loginButton = createButton('Welcome');
+        this.loginButton = createButton('In between us');
         this.loginButton.position(width * 0.5, height * 0.3);
         this.loginButton.size(width * 0.5, height * 0.1);
         this.loginButton.class('login-button');
@@ -22,14 +22,14 @@ class LoginScene {
         this.submitButton.parent(this.container);
 
         this.loginButton.mousePressed(() => {
-            if (this.loginButton.html() === 'Welcome') {
+            if (this.loginButton.html() === 'In between us') {
                 this.container.show();
                 this.loginButton.html('back');
             }
             else {
                 background(50);
                 this.container.hide();
-                this.loginButton.html('Welcome');
+                this.loginButton.html('In between us');
             }
         });
 
@@ -47,10 +47,10 @@ class LoginScene {
     }
 
     display() {
-        background(50);
+        background(255);
         colorMode(HSL);
         let buttonHue = frameCount % 360;
-        if (this.loginButton.html() === 'Welcome') {
+        if (this.loginButton.html() === 'In between us') {
             this.loginButton.style("background-color", `hsl(${buttonHue}deg 100 50)`);
         }
         else {

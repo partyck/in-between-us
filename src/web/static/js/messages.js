@@ -7,14 +7,14 @@ class Messages {
         this.textAreaContainer.hide();
 
         this.messageInput = createElement('textarea');
-        this.messageInput.position(width * 0.4, height * 0.9);
+        this.messageInput.position(width * 0.38, height * 0.9);
         this.messageInput.size(width * 0.65, 50);
         this.messageInput.class('chat-input');
         this.messageInput.parent(this.textAreaContainer);
 
         let sendButton = createButton('send');
-        sendButton.position(width * 0.9, height * 0.9);
-        sendButton.size(width * 0.2, 50);
+        sendButton.position(width * 0.88, height * 0.9);
+        sendButton.size(width * 0.2, 75);
         sendButton.parent(this.textAreaContainer);
         sendButton.class('send-button');
 
@@ -47,7 +47,7 @@ class Messages {
     }
 
     display() {
-        background(50);
+        background(255);
         this.messages.slice().reverse().forEach((message) => {
             message.display();
         });

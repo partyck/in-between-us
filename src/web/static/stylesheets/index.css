@@ -20,8 +20,8 @@ textarea {
 .name-input {
     transform: translate(-50%, -50%);
     max-width: 600px;
-    background-color: #585656;
-    color: #ffffff;
+    background-color: #ffffff;
+    color: #585656;
     border: 1px solid #d1d5db;
     border-radius: 12px;
     padding: 12px 16px;
@@ -88,8 +88,10 @@ textarea {
     transform: translate(-50%, -50%);
     width: 100%;
     max-width: 600px;
-    background-color: #585656;
-    color: #ffffff;
+    background-color: #ffffff;
+    color: #585656;
+    /* background-color: #585656;
+    color: #ffffff; */
     border: 1px solid #0015ff;
     border-radius: 12px;
     padding: 12px 16px;
