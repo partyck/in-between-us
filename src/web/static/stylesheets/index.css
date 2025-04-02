@@ -107,3 +107,15 @@ textarea {
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
     outline: none;
 }
+
+.logoIcon {
+    font-size: 24px;
+}
+
+.mousePointer {
+    text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+.mousePointer:hover {
+    cursor: pointer;
+}

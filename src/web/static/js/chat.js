@@ -1,4 +1,4 @@
-class Messages {
+class Chat {
 
     constructor() {
         this.messages = [];
@@ -53,16 +53,16 @@ class Messages {
         });
     }
 
-    newMessage() {
-        let message = messages.messageInput.value();
+    newMessage = () => {
+        let message = this.messageInput.value();
         if (message) {
             let newMessage = new Message(message, userName);
-            messages.messages.forEach((message) => { message.move(newMessage.height) });
-            messages.messages.push(newMessage);
+            this.messages.forEach((message) => { message.move(newMessage.height) });
+            this.messages.push(newMessage);
 
-            let messageHistory = messages.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
+            let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
             mySocket.sendMessage(userName, message, messageHistory);
-            messages.messageInput.value("");
+            this.messageInput.value("");
         }
     }
 }

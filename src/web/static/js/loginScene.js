@@ -5,6 +5,7 @@ class LoginScene {
         this.loginButton.position(width * 0.5, height * 0.3);
         this.loginButton.size(width * 0.5, height * 0.1);
         this.loginButton.class('login-button');
+        this.loginButton.hide();
         this.container = createDiv();
         this.container.id('form');
         this.container.hide();
@@ -39,11 +40,13 @@ class LoginScene {
                 this.container.hide();
                 this.loginButton.hide();
                 colorMode(RGB);
-                messages.show();
-                currentScene = SCENES.CHAT;
+                changeScene(SCENES.CHAT)
             }
         });
+    }
 
+    show() {
+        this.loginButton.show();
     }
 
     display() {
