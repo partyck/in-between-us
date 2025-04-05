@@ -110,10 +110,7 @@ textarea {
 
 .logoIcon {
     font-size: 24px;
-}
-
-.mousePointer {
-    text-shadow: 2px 2px 5px rgba(0, 0, 0, 0.5);
+    cursor: default;
 }
 
 .mousePointer:hover {

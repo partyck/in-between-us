@@ -29,11 +29,11 @@ class LoginScene {
 
   show() {
     this.container.show();
+    colorMode(HSL);
   }
 
   display() {
     background(255);
-    colorMode(HSL);
     let buttonHue = frameCount % 360;
     this.submitButton.style("background-color", `hsl(${buttonHue}deg 100 50)`);
   }

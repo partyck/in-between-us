@@ -4,6 +4,7 @@ class Home {
   constructor() {
     this.blurAmount = 1;
     textSize(24);
+    colorMode(HSL);
     this.w = textWidth(title);
     this.h = textAscent() + textDescent();
 
@@ -11,9 +12,9 @@ class Home {
     this.logoIcon.class('logoIcon');
     this.logoIcon.position((width - this.w) * 0.5, (height - this.h) * 0.5);
     this.logoIcon.size(this.w, this.h);
-    this.clicEenable = false;
+    this.logoCovered = false;
     this.logoIcon.mousePressed(() => {
-      if (this.blurAmount <= 0 && this.clicEenable) {
+      if (this.clicEenable) {
         this.logoIcon.hide();
         changeScene(SCENES.LOGIN);
       }
@@ -23,9 +24,13 @@ class Home {
     for (let i = 0; i < 500; i++) {
       let x = random(width);
       let y = random(height);
-      let r = random(1, 20);
+      let r = random(2, 20);
       this.bubbles.push(new Bubble(x, y, r));
     }
+  }
+
+  get clicEenable() {
+    return this.logoCovered && this.blurAmount <= 0;
   }
 
   display() {
@@ -46,14 +51,17 @@ class Home {
   }
 
   bubblesCoilide() {
-    this.clicEenable = !this.bubbles.some((bubble) => {
+    this.logoCovered = !this.bubbles.some((bubble) => {
       let { x, y } = this.logoIcon.position();
       return bubble.colides(x, y, this.w, this.h);
     });
 
     if (this.clicEenable) {
+      let buttonHue = frameCount % 360;
+      this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
       this.logoIcon.addClass('mousePointer');
     } else {
+      this.logoIcon.style("text-shadow", `0px 0px 0px rgb(0 0 0 / 0%)`);
       this.logoIcon.removeClass('mousePointer');
     }
   }
@@ -84,20 +92,9 @@ class Bubble {
 
   display() {
     noFill();
-    stroke(0, 0, 255, 100);
+    stroke('#2663fc');
     strokeWeight(2);
     ellipse(this.x, this.y, this.r * 2);
-
-    // Inner reflection
-    // noStroke();
-    // fill(255, 255, 255, 100);
-    // ellipse(this.x - this.r / 3, this.y - this.r / 3, this.r / 2);
-
-    // Outer glow
-    // stroke(173, 216, 230, 100);
-    // strokeWeight(4);
-    // noFill();
-    // ellipse(this.x, this.y, this.r * 2.2);
   }
 
   colides(buttonX, buttony, buttonWidth, buttonHeigth) {
