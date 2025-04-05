@@ -21,8 +21,8 @@ class LoginScene {
       if (inputE.value()) {
         userName = inputE.value();
         this.container.hide();
-        colorMode(RGB);
-        changeScene(SCENES.CHAT)
+        register(userName);
+        // changeScene(SCENES.WAITING);
       }
     });
   }

@@ -2,21 +2,9 @@ class Chat {
 
   constructor() {
     this.messages = [];
-    this.textAreaContainer = createDiv();
-    this.textAreaContainer.id('textAreaContainer');
-    this.textAreaContainer.hide();
-
-    this.messageInput = createElement('textarea');
-    this.messageInput.position(width * 0.38, height * 0.9);
-    this.messageInput.size(width * 0.65, 50);
-    this.messageInput.class('chat-input');
-    this.messageInput.parent(this.textAreaContainer);
-
-    let sendButton = createButton('send');
-    sendButton.position(width * 0.88, height * 0.9);
-    sendButton.size(width * 0.2, 75);
-    sendButton.parent(this.textAreaContainer);
-    sendButton.class('send-button');
+    this.inputMessageContainer = select('.input-message-container');
+    this.messageInput = select('.chat-input');
+    let sendButton = select('.send-button');
 
     sendButton.mousePressed(this.newMessage);
     this.messageInput.changed(this.newMessage);
@@ -43,7 +31,8 @@ class Chat {
   }
 
   show() {
-    this.textAreaContainer.show();
+    colorMode(RGB);
+    this.inputMessageContainer.removeClass('hidden');
   }
 
   display() {
@@ -61,7 +50,7 @@ class Chat {
       this.messages.push(newMessage);
 
       let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
-      mySocket.sendMessage(userName, message, messageHistory);
+      socketService.sendMessage(userName, message, messageHistory);
       this.messageInput.value("");
     }
   }

@@ -1,4 +1,4 @@
-let mySocket;
+let socketService;
 let home;
 let login;
 let chat;
@@ -14,11 +14,11 @@ const SCENES = Object.freeze({
 
 function setup() {
 	createCanvas(windowWidth, windowHeight);
-	mySocket = new MySocket();
+	socketService = new SocketService();
 	home = new Home();
 	login = new LoginScene();
 	chat = new Chat();
-	currentScene = SCENES.HOME;
+	changeScene(SCENES.HOME);
 	textFont('Arial', 16);
 	textWrap(WORD);
 	textLeading(20);

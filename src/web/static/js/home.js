@@ -2,9 +2,11 @@ const title = 'In between us.';
 
 class Home {
   constructor() {
-    this.blurAmount = 1;
     textSize(24);
     colorMode(HSL);
+
+    this.blurAmount = 1;
+    this.logoCovered = false;
     this.w = textWidth(title);
     this.h = textAscent() + textDescent();
 
@@ -12,7 +14,7 @@ class Home {
     this.logoIcon.class('logoIcon');
     this.logoIcon.position((width - this.w) * 0.5, (height - this.h) * 0.5);
     this.logoIcon.size(this.w, this.h);
-    this.logoCovered = false;
+    this.logoIcon.hide();
     this.logoIcon.mousePressed(() => {
       if (this.clicEenable) {
         this.logoIcon.hide();
@@ -31,6 +33,10 @@ class Home {
 
   get clicEenable() {
     return this.logoCovered && this.blurAmount <= 0;
+  }
+
+  show() {
+    this.logoIcon.show();
   }
 
   display() {
