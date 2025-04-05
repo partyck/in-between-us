@@ -1,68 +1,68 @@
 class Chat {
 
-    constructor() {
-        this.messages = [];
-        this.textAreaContainer = createDiv();
-        this.textAreaContainer.id('textAreaContainer');
-        this.textAreaContainer.hide();
+  constructor() {
+    this.messages = [];
+    this.textAreaContainer = createDiv();
+    this.textAreaContainer.id('textAreaContainer');
+    this.textAreaContainer.hide();
 
-        this.messageInput = createElement('textarea');
-        this.messageInput.position(width * 0.38, height * 0.9);
-        this.messageInput.size(width * 0.65, 50);
-        this.messageInput.class('chat-input');
-        this.messageInput.parent(this.textAreaContainer);
+    this.messageInput = createElement('textarea');
+    this.messageInput.position(width * 0.38, height * 0.9);
+    this.messageInput.size(width * 0.65, 50);
+    this.messageInput.class('chat-input');
+    this.messageInput.parent(this.textAreaContainer);
 
-        let sendButton = createButton('send');
-        sendButton.position(width * 0.88, height * 0.9);
-        sendButton.size(width * 0.2, 75);
-        sendButton.parent(this.textAreaContainer);
-        sendButton.class('send-button');
+    let sendButton = createButton('send');
+    sendButton.position(width * 0.88, height * 0.9);
+    sendButton.size(width * 0.2, 75);
+    sendButton.parent(this.textAreaContainer);
+    sendButton.class('send-button');
 
-        sendButton.mousePressed(this.newMessage);
-        this.messageInput.changed(this.newMessage);
-    }
+    sendButton.mousePressed(this.newMessage);
+    this.messageInput.changed(this.newMessage);
+  }
 
-    add(message, newUserName, prompt) {
-        if (newUserName === userName) {
-            let newMessage = this.messages.find((message) => {
-                return message.content === prompt;
-            });
-            if (newMessage) {
-                let distance = newMessage.rephrase(message);
-                this.messages.forEach((message) => {
-                    if (message.content !== newMessage.content) {
-                        message.y = message.y + distance;
-                    }
-                });
-            }
-        } else {
-            let newMessage = new Message(message, newUserName)
-            this.messages.forEach((message) => { message.move(newMessage.height) });
-            this.messages.push(newMessage);
-        }
-    }
-
-    show() {
-        this.textAreaContainer.show();
-    }
-
-    display() {
-        background(255);
-        this.messages.slice().reverse().forEach((message) => {
-            message.display();
+  add(message, newUserName, prompt) {
+    if (newUserName === userName) {
+      let newMessage = this.messages.find((message) => {
+        return message.content === prompt;
+      });
+      if (newMessage) {
+        let distance = newMessage.rephrase(message);
+        this.messages.forEach((message) => {
+          if (message.content !== newMessage.content) {
+            message.y = message.y + distance;
+          }
         });
+      }
+    } else {
+      let newMessage = new Message(message, newUserName)
+      this.messages.forEach((message) => { message.move(newMessage.height) });
+      this.messages.push(newMessage);
     }
+  }
 
-    newMessage = () => {
-        let message = this.messageInput.value();
-        if (message) {
-            let newMessage = new Message(message, userName);
-            this.messages.forEach((message) => { message.move(newMessage.height) });
-            this.messages.push(newMessage);
+  show() {
+    this.textAreaContainer.show();
+  }
 
-            let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
-            mySocket.sendMessage(userName, message, messageHistory);
-            this.messageInput.value("");
-        }
+  display() {
+    background(255);
+    this.messages.slice().reverse().forEach((message) => {
+      message.display();
+    });
+  }
+
+  newMessage = () => {
+    let message = this.messageInput.value();
+    if (message) {
+      let newMessage = new Message(message, userName);
+      this.messages.forEach((message) => { message.move(newMessage.height) });
+      this.messages.push(newMessage);
+
+      let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
+      mySocket.sendMessage(userName, message, messageHistory);
+      this.messageInput.value("");
     }
+  }
 }

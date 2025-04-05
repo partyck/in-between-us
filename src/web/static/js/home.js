@@ -29,7 +29,6 @@ class Home {
   }
 
   display() {
-    // textSize(32);
     background(255);
     this.logoIcon.style('filter', `blur(${this.blurAmount * 10}px)`);
 
@@ -39,7 +38,7 @@ class Home {
 
     for (let bubble of this.bubbles) {
       bubble.move();
-      bubble.repel(mouseX, mouseY);
+      bubble.repel();
       bubble.display(this.blurAmount);
     }
 
@@ -69,16 +68,15 @@ class Bubble {
   }
 
   move() {
-    // Keep bubbles from floating away, simulating a flat surface
     this.y = constrain(this.y + random(-1, 1), 20, height - 20);
     this.x = constrain(this.x + random(-1, 1), 20, width - 20);
   }
 
-  repel(px, py) {
-    let d = dist(this.x, this.y, px, py);
-    if (d < this.r * 5) {
-      let angle = atan2(this.y - py, this.x - px);
-      let force = map(d, 0, this.r * 5, 3, 0);
+  repel() {
+    let d = dist(this.x, this.y, mouseX, mouseY);
+    if (d < this.r * 6) {
+      let angle = atan2(this.y - mouseY, this.x - mouseX);
+      let force = map(d, 0, this.r * 6, 3, 0);
       this.x += cos(angle) * force;
       this.y += sin(angle) * force;
     }
