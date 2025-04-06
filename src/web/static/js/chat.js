@@ -25,7 +25,9 @@ class Chat {
     return lerpColor(this.tone1c, this.tone2c, this.toneValue);
   }
 
-  add(message, newUserName, prompt) {
+  add(message, newUserName, prompt, tone1, tone2) {
+    this.tone1s = tone1;
+    this.tone2s = tone2;
     if (newUserName === userName) {
       let newMessage = this.messages.find((message) => {
         return message.content === prompt;
@@ -71,8 +73,9 @@ class Chat {
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
 
-      let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
-      socketService.sendMessage(userName, message, this.toneValue, messageHistory);
+      let messageHistory = this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
+      const tone = { "tone1": this.tone1s, "tone1Value": 1 - this.toneValue, "tone2": this.tone2s, "tone2Value": this.toneValue };
+      socketService.sendMessage(userName, message, tone, messageHistory);
       this.messageInput.value("");
     }
   }

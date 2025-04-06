@@ -23,15 +23,15 @@ class SocketService {
     });
 
     this.socket.on('response-message', function (data) {
-      chat.add(data.message, data.userName, data.prompt);
+      chat.add(data.message, data.userName, data.prompt, data.tone1, data.tone2);
     });
   }
 
-  sendMessage(userName, message, toneValue, messageHistory) {
+  sendMessage(userName, message, tone, messageHistory) {
     this.socket.emit('send-message', {
       userName,
       message,
-      toneValue,
+      tone,
       messageHistory
     });
   }

@@ -6,8 +6,8 @@ from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import OPENIA_API_KEY
-from models import MessageInput, MessageResponse, Room, User
+from config import OPENIA_API_KEY, TONES_PROMPT
+from models import MessageInput, MessageResponse, Room, ToneResponse, User
 
 # DB initialize
 initialize_app()
@@ -67,10 +67,10 @@ def on_login(data):
 def event_send_message(data):
     new_message = MessageInput.from_json(data)
     messages = [
-        {"role": "developer", "content": new_message.message_history},
+        {"role": "developer", "content": new_message.message_history_prompt()},
         {
             "role": "developer",
-            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound more assertive and kind. Do not change the meaning and do not use place holders.',
+            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {100 * new_message.tone_1.value}% more {new_message.tone_1.tone}, and {100 * new_message.tone_2.value}% more {new_message.tone_2.tone}. Do not change the meaning and do not use place holders.',
         },
     ]
 
@@ -83,12 +83,40 @@ def event_send_message(data):
     )
     message = completion.choices[0].message.parsed
 
+    if message:
+        new_message.add_message(message)
+
+    completion2 = client.beta.chat.completions.parse(
+        # model="gpt-4o-mini",
+        model="gpt-4o-2024-08-06",
+        store=True,
+        messages=[
+            {"role": "developer", "content": TONES_PROMPT},
+            {"role": "developer", "content": new_message.message_history_prompt()},
+            {
+                "role": "developer",
+                "content": f"Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+            },
+        ],  # type: ignore
+        response_format=ToneResponse,
+    )
+
+    tones = completion2.choices[0].message.parsed
+    print("tones!!!!")
+    print(tones)
+
     room = getRoom(request.sid)
 
-    if room and isinstance(message, MessageResponse):
+    if room and isinstance(message, MessageResponse) and isinstance(tones, ToneResponse):
         socketio.emit(
             "response-message",
-            {"message": message.message, "userName": new_message.user_name, "prompt": new_message.message},
+            {
+                "message": message.message,
+                "userName": new_message.user_name,
+                "prompt": new_message.message,
+                "tone1": tones.tone_a,
+                "tone2": tones.tone_b,
+            },
             to=room.id,
         )
 
