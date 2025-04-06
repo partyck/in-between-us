@@ -2,36 +2,39 @@
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no, maximum-scale=1">
-    <link href='assets/mov-icon.ico' rel='shortcut icon'>
-    <link rel="stylesheet" href="/stylesheets/index.css">
-    <title>chat-ai</title>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no, maximum-scale=1">
+  <link href='assets/mov-icon.ico' rel='shortcut icon'>
+  <link rel="stylesheet" href="/stylesheets/index.css">
+  <title>chat-ai</title>
 </head>
 
 <body>
+  <div class="header-container hidden">
+    <span class="recipient-name"></span>
+  </div>
 
-    <div class="input-message-container hidden">
-        <textarea class="chat-input"></textarea>
-        <button class="send-button">
-            <img alt="send message" src="assets/message.png" class="send-icon">
-        </button>
-    </div>
+  <div class="input-message-container hidden">
+    <textarea class="chat-input"></textarea>
+    <button class="send-button">
+      <img alt="send message" src="assets/message.png" class="send-icon">
+    </button>
+  </div>
 
-    <script src="js/main.js"></script>
-    <script src="js/sockets.js"></script>
-    <script src="js/home.js"></script>
-    <script src="js/loginScene.js"></script>
-    <script src="js/waiting.js"></script>
-    <script src="js/message.js"></script>
-    <script src="js/chat.js"></script>
-    <script src="js/backend.js"></script>
+  <script src="js/main.js"></script>
+  <script src="js/sockets.js"></script>
+  <script src="js/home.js"></script>
+  <script src="js/loginScene.js"></script>
+  <script src="js/waiting.js"></script>
+  <script src="js/message.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/constants.js"></script>
 
-    <!-- libs -->
-    <script src="js/lib/p5.min.js"></script>
-    <script src="js/lib/p5.sound.min.js"></script>
-    <script src="js/lib/socket.io.js"></script>
+  <!-- libs -->
+  <script src="js/lib/p5.min.js"></script>
+  <script src="js/lib/p5.sound.min.js"></script>
+  <script src="js/lib/socket.io.js"></script>
 </body>
 
 </html>

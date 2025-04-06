@@ -10,11 +10,11 @@ class Message {
 
 		if (this.userName === userName) {
 			this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
-			this.bgColor = color(214, 151, 237);
-			this.strokeColor = color(50);
+			this.bgColor = c.sendMessageBGC1;
+			this.strokeColor = color(255);
 		} else {
 			this.x = 10;
-			this.bgColor = color(200);
+			this.bgColor = c.receivedMessageC;
 			this.strokeColor = color(10);
 		}
 	}
@@ -26,16 +26,13 @@ class Message {
 		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 		this.animation_s = 50;
-		this.bgColor = color(20, 100, 200);
+		this.bgColor = c.sendMessageBGC2;
 		this.strokeColor = color(255);
 		return old_height - this.height;
 	}
 
 	move(displacement) {
-		console.log(this.content);
-		console.log(this.y);
 		this.y = this.y - (displacement) - 20;
-		console.log(this.y);
 	}
 
 	display() {

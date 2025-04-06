@@ -3,6 +3,7 @@ let home;
 let login;
 let waiting;
 let chat;
+let c;
 
 let userName;
 let recipientName;
@@ -17,12 +18,13 @@ const SCENES = Object.freeze({
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  c = new Constants();
   socketService = new SocketService();
   home = new Home();
   login = new LoginScene();
   waiting = new Waiting();
   chat = new Chat();
-  changeScene(SCENES.LOGIN);
+  changeScene(SCENES.HOME);
   textFont('Arial', 16);
   textWrap(WORD);
   textLeading(20);

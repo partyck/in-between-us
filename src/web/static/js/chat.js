@@ -2,6 +2,10 @@ class Chat {
 
   constructor() {
     this.messages = [];
+
+    this.recipientNameE = select('.recipient-name');
+    this.headerContainer = select('.header-container');
+
     this.inputMessageContainer = select('.input-message-container');
     this.messageInput = select('.chat-input');
     let sendButton = select('.send-button');
@@ -33,11 +37,13 @@ class Chat {
   show() {
     colorMode(RGB);
     textSize(16);
+    this.recipientNameE.html(`${recipientName}`);
+    this.headerContainer.removeClass('hidden')
     this.inputMessageContainer.removeClass('hidden');
   }
 
   display() {
-    background(255);
+    background(c.bgColor);
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
@@ -58,6 +64,7 @@ class Chat {
 
   recipientDisconnected() {
     this.messages = [];
+    this.headerContainer.addClass('hidden');
     this.inputMessageContainer.addClass('hidden');
     changeScene(SCENES.WAITING);
     socketService.login(userName);

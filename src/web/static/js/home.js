@@ -40,7 +40,7 @@ class Home {
   }
 
   display() {
-    background(255);
+    background(c.bgColor);
     this.logoIcon.style('filter', `blur(${this.blurAmount * 10}px)`);
 
     if (this.blurAmount > 0) {

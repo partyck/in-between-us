@@ -21,7 +21,7 @@ class Waiting {
   }
 
   display() {
-    background(255);
+    background(c.bgColor);
     let buttonHue = frameCount % 360;
     this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
   }
