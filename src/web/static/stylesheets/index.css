@@ -142,7 +142,7 @@ textarea {
   display: grid;
   grid-template-columns: auto 10vw;
   gap: 2vw;
-  padding: 2vw;
+  padding: 1em 2vw;
   width: 96vw;
   bottom: 0px;
 }

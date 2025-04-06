@@ -5,13 +5,24 @@ class Chat {
 
     this.recipientNameE = select('.recipient-name');
     this.headerContainer = select('.header-container');
-
     this.inputMessageContainer = select('.input-message-container');
     this.messageInput = select('.chat-input');
-    let sendButton = select('.send-button');
+    this.sendButton = select('.send-button');
+    this.sendButton.mousePressed(this.newMessage);
 
-    sendButton.mousePressed(this.newMessage);
-    this.messageInput.changed(this.newMessage);
+    this.toneValue = 0.5;
+    this.tone1c = color('#00F260');
+    this.tone2c = color('#0575E6');
+    this.tone1s = 'Formal';
+    this.tone2s = 'Informal';
+    this.cy1 = height - 100;
+    this.cy0 = this.cy1 - height * 0.05;
+    this.cyt = this.cy1 - (this.cy1 - this.cy0) * 0.3;
+    this.cyc = this.cy1 - (this.cy1 - this.cy0) * 0.5;
+  }
+
+  get toneColor() {
+    return lerpColor(this.tone1c, this.tone2c, this.toneValue);
   }
 
   add(message, newUserName, prompt) {
@@ -40,10 +51,14 @@ class Chat {
     this.recipientNameE.html(`${recipientName}`);
     this.headerContainer.removeClass('hidden')
     this.inputMessageContainer.removeClass('hidden');
+    this.setToneValue(this.toneValue);
   }
 
   display() {
     background(c.bgColor);
+    this.displayToneControl()
+
+    textFont('Arial');
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
@@ -57,7 +72,7 @@ class Chat {
       this.messages.push(newMessage);
 
       let messageHistory = this.messages.slice(-10).map(message => { return { 'name': message.userName, 'content': message.content } });
-      socketService.sendMessage(userName, message, messageHistory);
+      socketService.sendMessage(userName, message, this.toneValue, messageHistory);
       this.messageInput.value("");
     }
   }
@@ -68,5 +83,38 @@ class Chat {
     this.inputMessageContainer.addClass('hidden');
     changeScene(SCENES.WAITING);
     socketService.login(userName);
+  }
+
+  displayToneControl() {
+    noFill();
+    for (let index = 0; index < width; index++) {
+      stroke(lerpColor(this.tone1c, this.tone2c, (index / width)));
+      line(index, this.cy0, index, this.cy1);
+    }
+
+    fill(this.toneColor);
+    stroke('0015ff');
+    strokeWeight(1);
+    circle(width * this.toneValue, this.cyc, height * 0.04);
+
+    noStroke();
+    fill(0);
+    textFont('Courier New');
+    text(this.tone1s, 10, this.cyt);
+    text(this.tone2s, width - 10 - textWidth(this.tone2s), this.cyt);
+    this.controllTone();
+  }
+
+  controllTone() {
+    if (!mouseIsPressed) return;
+    if (mouseY > this.cy0 && mouseY < this.cy1) {
+      this.setToneValue(mouseX / width);
+    }
+  }
+
+  setToneValue(newValue) {
+    this.toneValue = newValue;
+    let color = this.toneColor.toString('#rrggbb');
+    this.sendButton.style('background-color', color);
   }
 }

@@ -53,6 +53,7 @@ class MessageResponse(BaseModel):
 class MessageInput:
     user_name: str
     message: str
+    tone_value: float
     message_history: str
 
     @classmethod
@@ -64,4 +65,6 @@ class MessageInput:
             history_m = "Here is the conversation history:\n" + history_m
         else:
             history_m = "There is no conversation history."
-        return cls(user_name=data["userName"], message=data["message"], message_history=history_m)
+        return cls(
+            user_name=data["userName"], message=data["message"], tone_value=data["toneValue"], message_history=history_m
+        )

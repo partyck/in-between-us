@@ -27,10 +27,11 @@ class SocketService {
     });
   }
 
-  sendMessage(userName, message, messageHistory) {
+  sendMessage(userName, message, toneValue, messageHistory) {
     this.socket.emit('send-message', {
       userName,
       message,
+      toneValue,
       messageHistory
     });
   }
