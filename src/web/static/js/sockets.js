@@ -7,7 +7,19 @@ class SocketService {
 
   listenSockets() {
     this.socket.on('connect', function (data) {
-      console.log('Socket connected! ' + data);
+      console.log('Socket connected!', data);
+    });
+
+    this.socket.on('disconnect', function (data) {
+      console.log('Socket disconnect!', data);
+    });
+
+    this.socket.on('room', (data) => {
+      waiting.newRoom(data);
+    });
+
+    this.socket.on('userdisconnect', (data) => {
+      chat.recipientDisconnected();
     });
 
     this.socket.on('response-message', function (data) {
@@ -20,6 +32,12 @@ class SocketService {
       userName,
       message,
       messageHistory
+    });
+  }
+
+  login(userName) {
+    this.socket.emit('login', {
+      userName
     });
   }
 }

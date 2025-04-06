@@ -32,6 +32,7 @@ class Chat {
 
   show() {
     colorMode(RGB);
+    textSize(16);
     this.inputMessageContainer.removeClass('hidden');
   }
 
@@ -53,5 +54,12 @@ class Chat {
       socketService.sendMessage(userName, message, messageHistory);
       this.messageInput.value("");
     }
+  }
+
+  recipientDisconnected() {
+    this.messages = [];
+    this.inputMessageContainer.addClass('hidden');
+    changeScene(SCENES.WAITING);
+    socketService.login(userName);
   }
 }

@@ -21,8 +21,8 @@ class LoginScene {
       if (inputE.value()) {
         userName = inputE.value();
         this.container.hide();
-        register(userName);
-        // changeScene(SCENES.WAITING);
+        changeScene(SCENES.WAITING);
+        socketService.login(userName);
       }
     });
   }

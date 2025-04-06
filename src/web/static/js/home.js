@@ -3,8 +3,6 @@ const title = 'In between us.';
 class Home {
   constructor() {
     textSize(24);
-    colorMode(HSL);
-
     this.blurAmount = 1;
     this.logoCovered = false;
     this.w = textWidth(title);
@@ -36,6 +34,8 @@ class Home {
   }
 
   show() {
+    textSize(24);
+    colorMode(HSL);
     this.logoIcon.show();
   }
 

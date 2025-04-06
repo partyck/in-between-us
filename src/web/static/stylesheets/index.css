@@ -73,6 +73,14 @@ textarea {
   box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/* Waiting */
+
+.waiting-text {
+  font-size: 24px;
+  cursor: default;
+  color: #0b3ec2;
+}
+
 /* Chat Scene */
 
 .send-button {
