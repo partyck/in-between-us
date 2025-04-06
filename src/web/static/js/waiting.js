@@ -9,6 +9,7 @@ class Waiting {
 
     this.logoIcon = createSpan(waitingTitle);
     this.logoIcon.class('waiting-text');
+    this.logoIcon.addClass('unselectable');
     this.logoIcon.position((width - this.w) * 0.5, (height - this.h) * 0.5);
     this.logoIcon.size(this.w, this.h);
     this.logoIcon.hide();
