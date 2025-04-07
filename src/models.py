@@ -77,6 +77,12 @@ class MessageInput:
         else:
             return "There is no conversation history."
 
+    def higher_tone_value(self) -> int:
+        return int(max(self.tone_1.value, self.tone_2.value) * 100)
+
+    def higher_tone_name(self) -> str:
+        return self.tone_1.tone if self.tone_1.value > self.tone_2.value else self.tone_2.tone
+
     def add_message(self, new_message: MessageResponse):
         self.message_history.append({"name": new_message.user_name, "content": new_message.message})
 

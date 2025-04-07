@@ -70,7 +70,7 @@ def event_send_message(data):
         {"role": "developer", "content": new_message.message_history_prompt()},
         {
             "role": "developer",
-            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {100 * new_message.tone_1.value}% more {new_message.tone_1.tone}, and {100 * new_message.tone_2.value}% more {new_message.tone_2.tone}. Do not change the meaning and do not use place holders.',
+            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. Do not change the meaning and do not use place holders.',
         },
     ]
 
@@ -100,10 +100,7 @@ def event_send_message(data):
         ],  # type: ignore
         response_format=ToneResponse,
     )
-
     tones = completion2.choices[0].message.parsed
-    print("tones!!!!")
-    print(tones)
 
     room = getRoom(request.sid)
 
