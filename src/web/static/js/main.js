@@ -21,9 +21,6 @@ function setup() {
   c = new Constants();
   socketService = new SocketService();
   home = new Home();
-  login = new LoginScene();
-  waiting = new Waiting();
-  chat = new Chat();
   changeScene(SCENES.HOME);
   textFont('Arial', 16);
   textWrap(WORD);
@@ -35,15 +32,6 @@ function draw() {
     case SCENES.HOME:
       home.display();
       break;
-    case SCENES.LOGIN:
-      login.display();
-      break;
-    case SCENES.WAITING:
-      waiting.display();
-      break;
-    case SCENES.CHAT:
-      chat.display();
-      break;
     default:
       break;
   }
@@ -53,15 +41,6 @@ function changeScene(newScene) {
   switch (newScene) {
     case SCENES.HOME:
       home.show();
-      break;
-    case SCENES.LOGIN:
-      login.show();
-      break;
-    case SCENES.WAITING:
-      waiting.show();
-      break;
-    case SCENES.CHAT:
-      chat.show();
       break;
     default:
       break;
