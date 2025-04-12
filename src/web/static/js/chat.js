@@ -93,10 +93,10 @@ class Chat {
   }
 
   displayToneControl() {
-    noFill();
-    for (let index = 0; index < width; index++) {
-      stroke(lerpColor(this.tone1c, this.tone2c, (index / width)));
-      line(index, this.cy0, index, this.cy1);
+    for (let index = 0; index < width / 5; index++) {
+      noStroke();
+      fill(lerpColor(this.tone1c, this.tone2c, (index * 5 / width)));
+      rect(index * 5, this.cy0, index + 5, height * 0.05);
     }
 
     fill(this.toneColor);
