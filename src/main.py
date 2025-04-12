@@ -1,13 +1,15 @@
+import json
 import os
+from dataclasses import asdict
 
 from firebase_admin import firestore, initialize_app
-from flask import Flask, render_template, request
+from flask import Flask, Response, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import OPENIA_API_KEY, TONES_PROMPT
-from models import MessageInput, MessageResponse, Room, ToneResponse, User
+from config import COLORS_BY_TONE, OPENIA_API_KEY, TONES_PROMPT
+from models import Color, MessageInput, MessageResponse, Room, ToneResponse, User
 
 # DB initialize
 initialize_app()
@@ -59,7 +61,8 @@ def on_login(data):
         added = True
         continue
     if not added:
-        _, room_ref = db.collection("rooms").add({"active": True, "userA": user.to_json(), "userB": None})
+        new_room = Room(active=True, user_a=user, user_b=None)
+        _, room_ref = db.collection("rooms").add(new_room.to_json())
         join_room(room_ref.id)
 
 
@@ -105,14 +108,16 @@ def event_send_message(data):
     room = getRoom(request.sid)
 
     if room and isinstance(message, MessageResponse) and isinstance(tones, ToneResponse):
+        current_color = new_message.color
+        db.collection("color").document("color").set({"color": current_color})
         socketio.emit(
             "response-message",
             {
                 "message": message.message,
                 "userName": new_message.user_name,
                 "prompt": new_message.message,
-                "tone1": tones.tone_a,
-                "tone2": tones.tone_b,
+                "tone1": {"name": tones.tone_a, "color": COLORS_BY_TONE[tones.tone_a].to_json()},
+                "tone2": {"name": tones.tone_b, "color": COLORS_BY_TONE[tones.tone_b].to_json()},
             },
             to=room.id,
         )
@@ -130,6 +135,13 @@ def event_send_message_test(data):
 @app.route("/")
 def route_home():
     return render_template("index.html")
+
+
+@app.route("/esp", methods=["GET"])
+def esp_test():
+    color = db.collection("color").document("color").get()
+    color_doc = Color.from_json(color.to_dict()) if color.exists else Color(r=0, g=0, b=0)
+    return Response(response=json.dumps({"color": asdict(color_doc)}), status=200, mimetype="application/json")
 
 
 # HELPERS

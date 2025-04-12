@@ -26,8 +26,11 @@ class Chat {
   }
 
   add(message, newUserName, prompt, tone1, tone2) {
-    this.tone1s = tone1;
-    this.tone2s = tone2;
+    this.tone1s = tone1.name;
+    this.tone2s = tone2.name;
+    this.tone1c = color(tone1.color.r, tone1.color.g, tone1.color.b);
+    this.tone2c = color(tone2.color.r, tone2.color.g, tone2.color.b);
+
     if (newUserName === userName) {
       let newMessage = this.messages.find((message) => {
         return message.content === prompt;
@@ -74,7 +77,8 @@ class Chat {
       this.messages.push(newMessage);
 
       let messageHistory = this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
-      const tone = { "tone1": this.tone1s, "tone1Value": 1 - this.toneValue, "tone2": this.tone2s, "tone2Value": this.toneValue };
+      let color = this.toneColor.toString('#rrggbb');
+      const tone = { "tone1": this.tone1s, "tone1Value": 1 - this.toneValue, "tone2": this.tone2s, "tone2Value": this.toneValue, "color": color };
       socketService.sendMessage(userName, message, tone, messageHistory);
       this.messageInput.value("");
     }
