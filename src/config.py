@@ -7,6 +7,7 @@ with open("config.toml", mode="rb") as fp:
 
 # openIA
 OPENIA_API_KEY: str = config["openia_api_key"]
+DB_ROOMS: str = "rooms-" + config["dever"]
 
 TONES = [
     ("Friendly", "Hostile"),

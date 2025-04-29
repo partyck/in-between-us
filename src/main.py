@@ -8,7 +8,7 @@ from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import COLORS_BY_TONE, OPENIA_API_KEY, TONES_PROMPT
+from config import COLORS_BY_TONE, DB_ROOMS, OPENIA_API_KEY, TONES_PROMPT
 from models import Color, MessageInput, MessageResponse, Room, ToneResponse, User
 
 # DB initialize
@@ -35,7 +35,7 @@ def on_disconnect():
     room = getRoom(session_id)
 
     if room:
-        room_ref = db.collection("rooms").document(room.id)
+        room_ref = db.collection(DB_ROOMS).document(room.id)
         room_doc = Room.from_json(room_ref.get().to_dict())
         other_user = room_doc.user_a if room_doc.user_a.session_id == session_id else room_doc.user_b
         if other_user:
@@ -49,20 +49,19 @@ def on_login(data):
     print("on login!", request.sid)
     user_name = data["userName"] if isinstance(data, dict) else ""
     user = User(session_id=request.sid, user_name=user_name)
-    # user = {"sessionId": request.sid, "userName": user_name}
     incomplete_rooms = getIncompleteRooms()
     added = False
 
     for room in incomplete_rooms:
-        db.collection("rooms").document(room.id).update({"userB": user.to_json()})
-        room_doc = Room.from_json(db.collection("rooms").document(room.id).get().to_dict())
+        db.collection(DB_ROOMS).document(room.id).update({"userB": user.to_json()})
+        room_doc = Room.from_json(db.collection(DB_ROOMS).document(room.id).get().to_dict())
         join_room(room.id)
         socketio.emit("room", room_doc.to_json(), to=room.id)
         added = True
         continue
     if not added:
         new_room = Room(active=True, user_a=user, user_b=None)
-        _, room_ref = db.collection("rooms").add(new_room.to_json())
+        _, room_ref = db.collection(DB_ROOMS).add(new_room.to_json())
         join_room(room_ref.id)
 
 
@@ -149,7 +148,7 @@ def getRoom(userSId: str):
     rooms = [
         room
         for room in (
-            db.collection("rooms")
+            db.collection(DB_ROOMS)
             .where(
                 filter=Or(
                     [FieldFilter("userB.sessionId", "==", userSId), FieldFilter("userA.sessionId", "==", userSId)]
@@ -168,7 +167,7 @@ def getIncompleteRooms():
     return [
         room
         for room in (
-            db.collection("rooms")
+            db.collection(DB_ROOMS)
             .where(filter=FieldFilter("active", "==", True))
             .where(filter=FieldFilter("userB", "==", None))
             .stream()
