@@ -117,6 +117,7 @@ def event_send_message(data):
                 "prompt": new_message.message,
                 "tone1": {"name": tones.tone_a, "color": COLORS_BY_TONE[tones.tone_a].to_json()},
                 "tone2": {"name": tones.tone_b, "color": COLORS_BY_TONE[tones.tone_b].to_json()},
+                "color": current_color,
             },
             to=room.id,
         )

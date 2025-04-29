@@ -29,6 +29,10 @@ class Color:
     g: int
     b: int
 
+    def to_hex(self) -> str:
+        rgb_h = [i if len(i) > 1 else "0" + i for i in [hex(self.r)[2:], hex(self.g)[2:], hex(self.b)[2:]]]
+        return "#" + rgb_h[0] + rgb_h[1] + rgb_h[2]
+
     def to_json(self):
         return dict_to_json_convention(asdict(self))
 

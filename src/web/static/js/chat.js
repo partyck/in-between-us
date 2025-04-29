@@ -19,17 +19,20 @@ class Chat {
     this.cy0 = this.cy1 - height * 0.05;
     this.cyt = this.cy1 - (this.cy1 - this.cy0) * 0.3;
     this.cyc = this.cy1 - (this.cy1 - this.cy0) * 0.5;
+
+    this.bgC = c.bgColor;
   }
 
   get toneColor() {
     return lerpColor(this.tone1c, this.tone2c, this.toneValue);
   }
 
-  add(message, newUserName, prompt, tone1, tone2) {
+  add(message, newUserName, prompt, tone1, tone2, newColor) {
     this.tone1s = tone1.name;
     this.tone2s = tone2.name;
     this.tone1c = color(tone1.color.r, tone1.color.g, tone1.color.b);
     this.tone2c = color(tone2.color.r, tone2.color.g, tone2.color.b);
+    this.bgC = lerpColor(this.bgC, color(newColor), 0.3);
 
     if (newUserName === userName) {
       let newMessage = this.messages.find((message) => {
@@ -60,7 +63,7 @@ class Chat {
   }
 
   display() {
-    background(c.bgColor);
+    background(this.bgC);
     this.displayToneControl()
 
     textFont('Arial');

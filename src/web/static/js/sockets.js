@@ -23,7 +23,7 @@ class SocketService {
     });
 
     this.socket.on('response-message', function (data) {
-      chat.add(data.message, data.userName, data.prompt, data.tone1, data.tone2);
+      chat.add(data.message, data.userName, data.prompt, data.tone1, data.tone2, data.color);
     });
   }
 
