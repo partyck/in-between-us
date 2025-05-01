@@ -10,29 +10,12 @@ class Chat {
     this.sendButton = select('.send-button');
     this.sendButton.mousePressed(this.newMessage);
 
-    this.toneValue = 0.5;
-    this.tone1c = color('#00F260');
-    this.tone2c = color('#0575E6');
-    this.tone1s = 'Formal';
-    this.tone2s = 'Informal';
-    this.cy1 = height - 100;
-    this.cy0 = this.cy1 - height * 0.05;
-    this.cyt = this.cy1 - (this.cy1 - this.cy0) * 0.3;
-    this.cyc = this.cy1 - (this.cy1 - this.cy0) * 0.5;
-
+    this.toneController = new ToneController();
     this.bgC = c.bgColor;
   }
 
-  get toneColor() {
-    return lerpColor(this.tone1c, this.tone2c, this.toneValue);
-  }
-
   add(message, newUserName, prompt, tone1, tone2, newColor) {
-    this.tone1s = tone1.name;
-    this.tone2s = tone2.name;
-    this.tone1c = color(tone1.color.r, tone1.color.g, tone1.color.b);
-    this.tone2c = color(tone2.color.r, tone2.color.g, tone2.color.b);
-    this.bgC = lerpColor(this.bgC, color(newColor), 0.3);
+    this.toneController.addTones(tone1, tone2);
 
     if (newUserName === userName) {
       let newMessage = this.messages.find((message) => {
@@ -59,12 +42,12 @@ class Chat {
     this.recipientNameE.html(`${recipientName}`);
     this.headerContainer.removeClass('hidden')
     this.inputMessageContainer.removeClass('hidden');
-    this.setToneValue(this.toneValue);
+    this.toneController.setToneValue();
   }
 
   display() {
     background(this.bgC);
-    this.displayToneControl()
+    this.toneController.display();
 
     textFont('Arial');
     this.messages.slice().reverse().forEach((message) => {
@@ -80,8 +63,7 @@ class Chat {
       this.messages.push(newMessage);
 
       let messageHistory = this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
-      let color = this.toneColor.toString('#rrggbb');
-      const tone = { "tone1": this.tone1s, "tone1Value": 1 - this.toneValue, "tone2": this.tone2s, "tone2Value": this.toneValue, "color": color };
+      const tone = this.toneController.tonePayload();
       socketService.sendMessage(userName, message, tone, messageHistory);
       this.messageInput.value("");
     }
@@ -93,38 +75,5 @@ class Chat {
     this.inputMessageContainer.addClass('hidden');
     changeScene(SCENES.WAITING);
     socketService.login(userName);
-  }
-
-  displayToneControl() {
-    for (let index = 0; index < width / 5; index++) {
-      noStroke();
-      fill(lerpColor(this.tone1c, this.tone2c, (index * 5 / width)));
-      rect(index * 5, this.cy0, index + 5, height * 0.05);
-    }
-
-    fill(this.toneColor);
-    stroke('0015ff');
-    strokeWeight(1);
-    circle(width * this.toneValue, this.cyc, height * 0.04);
-
-    noStroke();
-    fill(0);
-    textFont('Courier New');
-    text(this.tone1s, 10, this.cyt);
-    text(this.tone2s, width - 10 - textWidth(this.tone2s), this.cyt);
-    this.controllTone();
-  }
-
-  controllTone() {
-    if (!mouseIsPressed) return;
-    if (mouseY > this.cy0 && mouseY < this.cy1) {
-      this.setToneValue(mouseX / width);
-    }
-  }
-
-  setToneValue(newValue) {
-    this.toneValue = newValue;
-    let color = this.toneColor.toString('#rrggbb');
-    this.sendButton.style('background-color', color);
   }
 }

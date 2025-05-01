@@ -58,8 +58,8 @@ TONES_WC = [
     ]
 ]
 
-COLORS_BY_TONE = {tone.tone_a.name: tone.tone_a.color for tone in TONES_WC} | {
-    tone.tone_b.name: tone.tone_b.color for tone in TONES_WC
+TONES_BY_NAME = {tone.tone_a.name: tone.tone_a for tone in TONES_WC} | {
+    tone.tone_b.name: tone.tone_b for tone in TONES_WC
 }
 
 

@@ -1,7 +1,7 @@
 class Message {
 	constructor(content, newUserName) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
-		this.MAX_MESSAGE_HEIGHT = chat.cy0 - 30;
+		this.MAX_MESSAGE_HEIGHT = height - 100 - height * 0.05 - 30;
 		this.content = content;
 		this.userName = newUserName;
 		this.calculateTextWidthAndHeight();

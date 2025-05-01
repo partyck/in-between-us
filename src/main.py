@@ -8,8 +8,16 @@ from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import COLORS_BY_TONE, DB_ROOMS, OPENIA_API_KEY, TONES_PROMPT
-from models import Color, MessageInput, MessageResponse, Room, ToneResponse, User
+from config import DB_ROOMS, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from models import (
+    Color,
+    MessageInput,
+    MessageResponse,
+    Room,
+    ToneOptions,
+    ToneResponse,
+    User,
+)
 
 # DB initialize
 initialize_app()
@@ -102,11 +110,12 @@ def event_send_message(data):
         ],  # type: ignore
         response_format=ToneResponse,
     )
-    tones = completion2.choices[0].message.parsed
+    tones_response = completion2.choices[0].message.parsed
 
     room = getRoom(request.sid)
 
-    if room and isinstance(message, MessageResponse) and isinstance(tones, ToneResponse):
+    if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
+        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
         current_color = new_message.color
         db.collection("color").document("color").set({"color": current_color})
         socketio.emit(
@@ -115,8 +124,8 @@ def event_send_message(data):
                 "message": message.message,
                 "userName": new_message.user_name,
                 "prompt": new_message.message,
-                "tone1": {"name": tones.tone_a, "color": COLORS_BY_TONE[tones.tone_a].to_json()},
-                "tone2": {"name": tones.tone_b, "color": COLORS_BY_TONE[tones.tone_b].to_json()},
+                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
+                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
                 "color": current_color,
             },
             to=room.id,
