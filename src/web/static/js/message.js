@@ -1,5 +1,5 @@
 class Message {
-	constructor(content, newUserName) {
+	constructor(content, newUserName, bgColor = c.receivedMessageC) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
 		this.MAX_MESSAGE_HEIGHT = height - 100 - height * 0.05 - 30;
 		this.content = content;
@@ -7,14 +7,13 @@ class Message {
 		this.calculateTextWidthAndHeight();
 		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.animation_s = 80;
+		this.bgColor = bgColor;
 
 		if (this.userName === userName) {
 			this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
-			this.bgColor = c.sendMessageBGC1;
 			this.strokeColor = color(255);
 		} else {
 			this.x = 10;
-			this.bgColor = c.receivedMessageC;
 			this.strokeColor = color(10);
 		}
 	}

@@ -58,7 +58,7 @@ class Chat {
   newMessage = () => {
     let message = this.messageInput.value();
     if (message) {
-      let newMessage = new Message(message, userName);
+      let newMessage = new Message(message, userName, this.toneController.toneColor);
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
 
