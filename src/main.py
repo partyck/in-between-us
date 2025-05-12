@@ -132,10 +132,63 @@ def event_send_message(data):
         )
 
 
-@socketio.on("send-test")
-def event_send_message_test(data):
-    data["prompt"] = data["message"]
-    socketio.emit("response-message", data)
+@socketio.on("send-ghost-message")
+def event_send_ghost_message(data):
+    new_message = MessageInput.from_json(data)
+    messages = [
+        {"role": "developer", "content": new_message.message_history_prompt()},
+        {
+            "role": "developer",
+            "content": f"Based on the past conversation, generate the next message on behalf of  {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. The message should be less than 80 characters long. do not use place holders.",
+        },
+    ]
+
+    completion = client.beta.chat.completions.parse(
+        # model="gpt-4o-mini",
+        model="gpt-4o-2024-08-06",
+        store=True,
+        messages=messages,  # type: ignore
+        response_format=MessageResponse,
+    )
+    message = completion.choices[0].message.parsed
+
+    if message:
+        new_message.add_message(message)
+
+    completion2 = client.beta.chat.completions.parse(
+        # model="gpt-4o-mini",
+        model="gpt-4o-2024-08-06",
+        store=True,
+        messages=[
+            {"role": "developer", "content": TONES_PROMPT},
+            {"role": "developer", "content": new_message.message_history_prompt()},
+            {
+                "role": "developer",
+                "content": f"Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+            },
+        ],  # type: ignore
+        response_format=ToneResponse,
+    )
+    tones_response = completion2.choices[0].message.parsed
+
+    room = getRoom(request.sid)
+
+    if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
+        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
+        current_color = new_message.color
+        db.collection("color").document("color").set({"color": current_color})
+        socketio.emit(
+            "response-message",
+            {
+                "message": message.message,
+                "userName": new_message.user_name,
+                "prompt": new_message.message,
+                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
+                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
+                "color": current_color,
+            },
+            to=room.id,
+        )
 
 
 # ROUTES
@@ -144,13 +197,6 @@ def event_send_message_test(data):
 @app.route("/")
 def route_home():
     return render_template("index.html")
-
-
-@app.route("/esp", methods=["GET"])
-def esp_test():
-    color = db.collection("color").document("color").get()
-    color_doc = Color.from_json(color.to_dict()) if color.exists else Color(r=0, g=0, b=0)
-    return Response(response=json.dumps({"color": asdict(color_doc)}), status=200, mimetype="application/json")
 
 
 # HELPERS

@@ -12,9 +12,18 @@ class Chat {
 
     this.toneController = new ToneController();
     this.bgC = c.bgColor;
+    this.isWaiting = true;
+    this.count = 0;
+    this.waiting = random(15, 30);
+  }
+
+  get messageHistory() {
+    return this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
   }
 
   add(message, newUserName, prompt, tone1, tone2, newColor) {
+    this.count = 0;
+    this.isWaiting = newUserName !== userName;
     this.toneController.addTones(tone1, tone2);
 
     if (newUserName === userName) {
@@ -29,8 +38,14 @@ class Chat {
           }
         });
       }
-    } else {
-      let newMessage = new Message(message, newUserName)
+      else {
+        let newMessage = new Message(message, newUserName, c.sendMessageBGC2);
+        this.messages.forEach((message) => { message.move(newMessage.height) });
+        this.messages.push(newMessage);
+      }
+    }
+    else {
+      let newMessage = new Message(message, newUserName);
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
     }
@@ -53,6 +68,8 @@ class Chat {
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
+
+    this.ghostMessage();
   }
 
   newMessage = () => {
@@ -61,11 +78,9 @@ class Chat {
       let newMessage = new Message(message, userName, this.toneController.toneColor);
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
-
-      let messageHistory = this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
-      const tone = this.toneController.tonePayload();
-      socketService.sendMessage(userName, message, tone, messageHistory);
+      socketService.sendMessage(userName, message, this.toneController.tonePayload(), this.messageHistory);
       this.messageInput.value("");
+      this.count = 0;
     }
   }
 
@@ -75,5 +90,14 @@ class Chat {
     this.inputMessageContainer.addClass('hidden');
     changeScene(SCENES.WAITING);
     socketService.login(userName);
+  }
+
+  ghostMessage() {
+    if (!this.isWaiting) return;
+    this.count++;
+    if (this.waiting * frameRate() - this.count > 0) return;
+    socketService.sendGhostMessage(userName, this.toneController.tonePayload(), this.messageHistory);
+    this.count = 0;
+    this.isWaiting = true;
   }
 }

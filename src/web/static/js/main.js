@@ -24,7 +24,7 @@ function setup() {
   login = new LoginScene();
   waiting = new Waiting();
   chat = new Chat();
-  changeScene(SCENES.LOGIN);
+  changeScene(SCENES.HOME);
   textFont('Arial', 16);
   textWrap(WORD);
   textLeading(20);

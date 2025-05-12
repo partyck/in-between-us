@@ -161,7 +161,7 @@ class MessageInput:
             tone_2 = aux
         return cls(
             user_name=data["userName"],
-            message=data["message"],
+            message=data.get("message", ""),
             tone_1=tone_1,
             tone_2=tone_2,
             message_history=history_m,

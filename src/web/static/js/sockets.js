@@ -36,6 +36,14 @@ class SocketService {
     });
   }
 
+  sendGhostMessage(userName, tone, messageHistory) {
+    this.socket.emit('send-ghost-message', {
+      userName,
+      tone,
+      messageHistory
+    });
+  }
+
   login(userName) {
     this.socket.emit('login', {
       userName
