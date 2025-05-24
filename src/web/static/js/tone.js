@@ -32,7 +32,7 @@ class ToneController {
 
     noStroke();
     fill(0);
-    textFont('Courier New');
+    textFont('Roboto Mono');
     text(this.tone1s, 10, this.cyt);
     text(this.tone2s, width - 10 - textWidth(this.tone2s), this.cyt);
     this.control();

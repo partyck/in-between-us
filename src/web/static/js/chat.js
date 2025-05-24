@@ -15,6 +15,8 @@ class Chat {
     this.isWaiting = true;
     this.count = 0;
     this.waiting = random(15, 30);
+
+    this.sound = new Sound();
   }
 
   get messageHistory() {
@@ -45,6 +47,7 @@ class Chat {
       }
     }
     else {
+      this.sound.newMessage();
       let newMessage = new Message(message, newUserName);
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
@@ -54,7 +57,7 @@ class Chat {
   show() {
     colorMode(RGB);
     textSize(16);
-    this.recipientNameE.html(`${recipientName}`);
+    this.recipientNameE.html(`You are talking to ${recipientName}`);
     this.headerContainer.removeClass('hidden')
     this.inputMessageContainer.removeClass('hidden');
     this.toneController.setToneValue();
