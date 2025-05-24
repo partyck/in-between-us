@@ -5,14 +5,10 @@ class Home {
     textSize(24);
     this.blurAmount = 1;
     this.logoCovered = false;
-    this.w = textWidth(title);
-    this.h = textAscent() + textDescent();
-
     this.logoIcon = createSpan(title);
-    this.logoIcon.class('logoIcon');
+    this.logoIcon.class('logo-icon');
     this.logoIcon.addClass('unselectable');
-    this.logoIcon.position((width - this.w) * 0.5, (height - this.h) * 0.5);
-    this.logoIcon.size(this.w, this.h);
+
     this.logoIcon.hide();
     this.logoIcon.mousePressed(() => {
       if (this.clicEenable) {
@@ -21,11 +17,12 @@ class Home {
       }
     });
 
+    let bubblesLength = width * height * 0.001;
     this.bubbles = [];
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < bubblesLength; i++) {
       let x = random(width);
       let y = random(height);
-      let r = random(2, 20);
+      let r = random(5, 20);
       this.bubbles.push(new Bubble(x, y, r));
     }
   }
@@ -58,9 +55,11 @@ class Home {
   }
 
   bubblesCoilide() {
+    let { x: bX, y: bY } = this.logoIcon.position();
+    let bW = this.logoIcon.elt.offsetWidth;
+    let bH = this.logoIcon.elt.offsetHeight;
     this.logoCovered = !this.bubbles.some((bubble) => {
-      let { x, y } = this.logoIcon.position();
-      return bubble.colides(x, y, this.w, this.h);
+      return bubble.colides(bX - bW * 0.5, bY - bH * 0.5, bW, bH);
     });
 
     if (this.clicEenable) {

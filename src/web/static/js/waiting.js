@@ -3,28 +3,22 @@ const waitingTitle = 'Waiting for someone to join.';
 class Waiting {
 
   constructor() {
-    textSize(24);
-    this.w = textWidth(waitingTitle);
-    this.h = textAscent() + textDescent();
-
-    this.logoIcon = createSpan(waitingTitle);
-    this.logoIcon.class('waiting-text');
-    this.logoIcon.addClass('unselectable');
-    this.logoIcon.position((width - this.w) * 0.5, (height - this.h) * 0.5);
-    this.logoIcon.size(this.w, this.h);
-    this.logoIcon.hide();
+    this.waitingText = createSpan(waitingTitle);
+    this.waitingText.class('waiting-text');
+    this.waitingText.addClass('unselectable');
+    this.waitingText.hide();
   }
 
   show() {
     textSize(24);
     colorMode(HSL);
-    this.logoIcon.show();
+    this.waitingText.show();
   }
 
   display() {
     background(c.bgColor);
     let buttonHue = frameCount % 360;
-    this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
+    this.waitingText.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
   }
 
   newRoom(room) {
@@ -34,7 +28,7 @@ class Waiting {
     else {
       recipientName = room.userA.userName;
     }
-    this.logoIcon.hide();
+    this.waitingText.hide();
     changeScene(SCENES.CHAT);
   }
 }
