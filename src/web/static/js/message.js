@@ -1,5 +1,5 @@
 class Message {
-	constructor(content, newUserName, bgColor = c.receivedMessageC) {
+	constructor(content, newUserName, bgColor = c.receivedMessageC, isWaiting = true) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
 		this.MAX_MESSAGE_HEIGHT = height - 100 - height * 0.05 - 30;
 		this.content = content;
@@ -12,7 +12,7 @@ class Message {
 		if (this.userName === userName) {
 			this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 			this.strokeColor = color(255);
-			this.waiting = true;
+			this.waiting = isWaiting;
 		} else {
 			this.x = 10;
 			this.strokeColor = color(10);
@@ -60,7 +60,6 @@ class Message {
 
 			fill(currentFillColor);
 			rect(rectX, rectY, rectW, rectH, 15, 15, 15, 15);
-			this._drawRectWithPadding();
 			this.animation_s--;
 
 		} else if (this.waiting) {

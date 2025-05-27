@@ -41,7 +41,7 @@ class Chat {
         });
       }
       else {
-        let newMessage = new Message(message, newUserName, c.sendMessageBGC2);
+        let newMessage = new Message(message, newUserName, c.sendMessageBGC2, false);
         this.messages.forEach((message) => { message.move(newMessage.height) });
         this.messages.push(newMessage);
       }
