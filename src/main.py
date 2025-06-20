@@ -1,23 +1,13 @@
-import json
 import os
-from dataclasses import asdict
 
 from firebase_admin import firestore, initialize_app
-from flask import Flask, Response, render_template, request
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
 from config import DB_ROOMS, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
-from models import (
-    Color,
-    MessageInput,
-    MessageResponse,
-    Room,
-    ToneOptions,
-    ToneResponse,
-    User,
-)
+from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
 
 # DB initialize
 initialize_app()
@@ -33,13 +23,13 @@ client = OpenAI(api_key=OPENIA_API_KEY)
 # SOCKETS
 @socketio.on("connect")
 def on_connect():
-    print("on_connect", request.sid)
+    print("on_connect", request.sid)  # type: ignore
 
 
 @socketio.on("disconnect")
 def on_disconnect():
-    print("on_disconnect", request.sid)
-    session_id = request.sid
+    session_id = request.sid  # type: ignore
+    print("on_disconnect", session_id)
     room = getRoom(session_id)
 
     if room:
@@ -47,16 +37,17 @@ def on_disconnect():
         room_doc = Room.from_json(room_ref.get().to_dict())
         other_user = room_doc.user_a if room_doc.user_a.session_id == session_id else room_doc.user_b
         if other_user:
-            socketio.emit("userdisconnect", {"message": "user has entered the room."}, to=room.id)
+            socketio.emit("userdisconnect", {"message": "user disconnected."}, to=room.id)
             leave_room(room.id, other_user.session_id)
         room_ref.update({"active": False})
 
 
 @socketio.on("login")
 def on_login(data):
-    print("on login!", request.sid)
+    session_id = request.sid  # type: ignore
+    print("on login!", session_id)
     user_name = data["userName"] if isinstance(data, dict) else ""
-    user = User(session_id=request.sid, user_name=user_name)
+    user = User(session_id=session_id, user_name=user_name)
     incomplete_rooms = getIncompleteRooms()
     added = False
 
@@ -73,9 +64,27 @@ def on_login(data):
         join_room(room_ref.id)
 
 
+@socketio.on("logout")
+def on_logout():
+    session_id = request.sid  # type: ignore
+    print("on logout", session_id)
+    room = getRoom(session_id)
+    if room:
+        leave_room(room.id, session_id)
+        room_ref = db.collection(DB_ROOMS).document(room.id)
+        room_doc = Room.from_json(room_ref.get().to_dict())
+        other_user = room_doc.user_a if room_doc.user_a.session_id == session_id else room_doc.user_b
+        if other_user:
+            # socketio.emit("userdisconnect", {"message": "user has entered the room."}, to=room.id)
+            socketio.emit("logout", {"message": "user has logged out."}, to=room.id)
+            leave_room(room.id, other_user.session_id)
+        room_ref.update({"active": False})
+
+
 @socketio.on("send-message")
 def event_send_message(data):
     new_message = MessageInput.from_json(data)
+    print(f'new message from: {new_message.user_name} prompt: "{new_message.message}"')
     messages = [
         {"role": "developer", "content": new_message.message_history_prompt()},
         {
@@ -105,16 +114,17 @@ def event_send_message(data):
             {"role": "developer", "content": new_message.message_history_prompt()},
             {
                 "role": "developer",
-                "content": f"Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
             },
         ],  # type: ignore
         response_format=ToneResponse,
     )
     tones_response = completion2.choices[0].message.parsed
 
-    room = getRoom(request.sid)
+    room = getRoom(request.sid)  # type: ignore
 
     if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
+        print(f'new message from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
         tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
         current_color = new_message.color
         db.collection("color").document("color").set({"color": current_color})
@@ -135,6 +145,7 @@ def event_send_message(data):
 @socketio.on("send-ghost-message")
 def event_send_ghost_message(data):
     new_message = MessageInput.from_json(data)
+    print(f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}"')
     messages = [
         {"role": "developer", "content": new_message.message_history_prompt()},
         {
@@ -164,18 +175,21 @@ def event_send_ghost_message(data):
             {"role": "developer", "content": new_message.message_history_prompt()},
             {
                 "role": "developer",
-                "content": f"Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
             },
         ],  # type: ignore
         response_format=ToneResponse,
     )
     tones_response = completion2.choices[0].message.parsed
 
-    room = getRoom(request.sid)
+    room = getRoom(request.sid)  # type: ignore
 
     if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
         tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
         current_color = new_message.color
+        print(
+            f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"'
+        )
         db.collection("color").document("color").set({"color": current_color})
         socketio.emit(
             "response-message",

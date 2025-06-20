@@ -8,6 +8,11 @@ class Chat {
     this.inputMessageContainer = select('.input-message-container');
     this.messageInput = select('.chat-input');
     this.sendButton = select('.send-button');
+    this.closeButton = select('.home-button');
+    this.closeButton.mousePressed(() => {
+      socketService.logout();
+      location.reload();
+    });
     this.sendButton.mousePressed(this.newMessage);
 
     this.toneController = new ToneController();
@@ -58,7 +63,7 @@ class Chat {
     colorMode(RGB);
     textSize(16);
     this.recipientNameE.html(`You are talking to ${recipientName}`);
-    this.headerContainer.removeClass('hidden')
+    this.headerContainer.removeClass('hidden');
     this.inputMessageContainer.removeClass('hidden');
     this.toneController.setToneValue();
   }

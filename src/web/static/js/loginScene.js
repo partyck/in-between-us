@@ -1,26 +1,15 @@
 class LoginScene {
 
   constructor() {
-    this.container = createDiv();
-    this.container.id('form');
-    this.container.hide();
-
-    let inputE = createInput();
-    inputE.position(width * 0.5, height * 0.5);
-    inputE.parent(this.container);
-    inputE.class('name-input');
-    inputE.attribute('placeholder', 'Tell me your name... ');
-
-    this.submitButton = createButton('ok');
-    this.submitButton.position(width * 0.5, height * 0.6);
-    this.submitButton.size(width * 0.5, 50);
-    this.submitButton.class('login-button');
-    this.submitButton.parent(this.container);
+    this.container = select('#form');
+    let inputE = select('#name-input');
+    this.submitButton = select('.login-button');
 
     this.submitButton.mousePressed(() => {
       if (inputE.value()) {
         userName = inputE.value();
-        this.container.hide();
+        inputE.value('');
+        this.container.addClass('hidden');
         changeScene(SCENES.WAITING);
         socketService.login(userName);
       }
@@ -28,7 +17,7 @@ class LoginScene {
   }
 
   show() {
-    this.container.show();
+    this.container.removeClass('hidden');
     colorMode(HSL);
   }
 

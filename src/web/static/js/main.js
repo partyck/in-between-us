@@ -18,6 +18,13 @@ const SCENES = Object.freeze({
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
+  textFont('Arial', 16);
+  textWrap(WORD);
+  textLeading(20);
+  init();
+}
+
+function init() {
   c = new Constants();
   socketService = new SocketService();
   home = new Home();
@@ -25,9 +32,6 @@ function setup() {
   waiting = new Waiting();
   chat = new Chat();
   changeScene(SCENES.HOME);
-  textFont('Arial', 16);
-  textWrap(WORD);
-  textLeading(20);
 }
 
 function draw() {
@@ -68,3 +72,10 @@ function changeScene(newScene) {
   }
   currentScene = newScene;
 }
+
+function backHome() {
+  userName = null;
+  recipientName = null;
+  init();
+}
+

@@ -47,8 +47,14 @@ textarea {
 
 /* Login Scene */
 
-.name-input {
+.login-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   transform: translate(-50%, -50%);
+}
+
+.name-input {
   max-width: 600px;
   background-color: #ffffff;
   color: #585656;
@@ -71,7 +77,6 @@ textarea {
 }
 
 .login-button {
-  transform: translate(-50%, -50%);
   color: #ffffff;
   padding: 12px 24px;
   font-size: 16px;
@@ -160,11 +165,41 @@ textarea {
 
 .header-container {
   position: absolute;
-  padding: 5vw;
-  width: 96vw;
-  top: 0px;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 20px;
+  margin: 0;
   background: rgba(187, 244, 230, 0.462);
   backdrop-filter: blur(16px);
+}
+
+.home-button {
+  color: #ffffff;
+  background-color: #58ee85;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+  font-weight: 300;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.home-button:hover {
+  color: #edf0f4;
+  background-color: #ea3737;
+  box-shadow: 0px 6px 8px rgba(0, 0, 0, 0.15);
+}
+
+.home-button:active {
+  background-color: #0c7359;
+  box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .recipient-name {

@@ -9,9 +9,10 @@
   <link rel="apple-touch-icon" href="path/to/your/app-icon.png">
   <link rel="apple-touch-startup-image" href="path/to/your/startup-image.png">
   <link rel="manifest" href="/manifest.json">
-  
+
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no, maximum-scale=1, user-scalable=no">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, shrink-to-fit=no, maximum-scale=1, user-scalable=no">
   <link href='assets/mov-icon.ico' rel='shortcut icon'>
   <link rel="stylesheet" href="/stylesheets/index.css">
 
@@ -25,8 +26,16 @@
 </head>
 
 <body>
+  <!-- Login elements -->
+  <div id="form" class="login-container hidden">
+    <input id="name-input" type="text" class="name-input" placeholder="Tell me your name... ">
+    <button class="login-button">ok</button>
+  </div>
+
+  <!-- Chat elements -->
   <div class="header-container hidden">
-    <span class="recipient-name"></span>
+    <span class="recipient-name"> my name is Gemini</span>
+    <button class="home-button">X</button>
   </div>
 
   <div class="input-message-container hidden">
