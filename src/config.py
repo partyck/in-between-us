@@ -24,36 +24,36 @@ TONES_WC = [
     ToneOptions.from_json(tone)
     for tone in [
         {
+            "toneA": {"name": "Informal", "color": {"r": 0, "g": 242, "b": 96}},
+            "toneB": {"name": "Formal", "color": {"r": 5, "g": 117, "b": 230}},
+        },
+        {
             "toneA": {"name": "Friendly", "color": {"r": 144, "g": 238, "b": 144}},
-            "toneB": {"name": "Hostile", "color": {"r": 178, "g": 34, "b": 34}},
+            "toneB": {"name": "Hostile", "color": {"r": 235, "g": 66, "b": 66}},
         },
         {
-            "toneA": {"name": "Informal", "color": {"r": 255, "g": 223, "b": 0}},
-            "toneB": {"name": "Formal", "color": {"r": 33, "g": 33, "b": 33}},
-        },
-        {
-            "toneA": {"name": "Humorous", "color": {"r": 255, "g": 165, "b": 0}},
-            "toneB": {"name": "Serious", "color": {"r": 54, "g": 69, "b": 79}},
+            "toneA": {"name": "Humorous", "color": {"r": 255, "g": 255, "b": 28}},
+            "toneB": {"name": "Serious", "color": {"r": 0, "g": 195, "b": 255}},
         },
         {
             "toneA": {"name": "Supportive", "color": {"r": 135, "g": 206, "b": 250}},
             "toneB": {"name": "Dismissive", "color": {"r": 169, "g": 169, "b": 169}},
         },
         {
-            "toneA": {"name": "Respectful", "color": {"r": 147, "g": 112, "b": 219}},
-            "toneB": {"name": "Rude", "color": {"r": 139, "g": 0, "b": 0}},
+            "toneA": {"name": "Respectful", "color": {"r": 252, "g": 92, "b": 125}},
+            "toneB": {"name": "Rude", "color": {"r": 106, "g": 130, "b": 251}},
         },
         {
-            "toneA": {"name": "Relaxed", "color": {"r": 147, "g": 112, "b": 219}},
-            "toneB": {"name": "Tense", "color": {"r": 139, "g": 0, "b": 0}},
+            "toneA": {"name": "Relaxed", "color": {"r": 169, "g": 128, "b": 255}},
+            "toneB": {"name": "Tense", "color": {"r": 255, "g": 111, "b": 111}},
         },
         {
             "toneA": {"name": "Empathetic", "color": {"r": 255, "g": 192, "b": 203}},
             "toneB": {"name": "Cold", "color": {"r": 176, "g": 224, "b": 230}},
         },
         {
-            "toneA": {"name": "Flirty", "color": {"r": 255, "g": 105, "b": 180}},
-            "toneB": {"name": "Distant", "color": {"r": 105, "g": 105, "b": 105}},
+            "toneA": {"name": "Flirty", "color": {"r": 255, "g": 105, "b": 237}},
+            "toneB": {"name": "Distant", "color": {"r": 137, "g": 255, "b": 253}},
         },
     ]
 ]
