@@ -19,7 +19,7 @@ class Chat {
     this.bgC = c.bgColor;
     this.isWaiting = true;
     this.count = 0;
-    this.waiting = random(15, 30);
+    this.waiting = random(30, 45);
 
     this.sound = new Sound();
   }
