@@ -8,6 +8,8 @@ let c;
 let userName;
 let recipientName;
 let currentScene;
+let timerToRefresh = 60 * 60;
+
 
 const SCENES = Object.freeze({
   HOME: Symbol("Home"),
@@ -41,9 +43,11 @@ function draw() {
       break;
     case SCENES.LOGIN:
       login.display();
+      updateTimer();
       break;
     case SCENES.WAITING:
       waiting.display();
+      updateTimer();
       break;
     case SCENES.CHAT:
       chat.display();
@@ -71,11 +75,21 @@ function changeScene(newScene) {
       break;
   }
   currentScene = newScene;
+  timerToRefresh = 60 * 60;
 }
 
 function backHome() {
   userName = null;
   recipientName = null;
   init();
+}
+
+function updateTimer() {
+  if (timerToRefresh < 0) {
+    location.reload();
+  }
+  else {
+    timerToRefresh--;
+  }
 }
 
