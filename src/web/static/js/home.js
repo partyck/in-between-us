@@ -3,7 +3,6 @@ const title = 'In between us.';
 class Home {
   constructor() {
     textSize(24);
-    this.blurAmount = 1;
     this.logoCovered = false;
     this.logoIcon = createSpan(title);
     this.logoIcon.class('logo-icon');
@@ -17,38 +16,37 @@ class Home {
       }
     });
 
-    let bubblesLength = width * height * 0.001;
+    const bubblesLength = width * height * 0.0002;
     this.bubbles = [];
     for (let i = 0; i < bubblesLength; i++) {
       let x = random(width);
       let y = random(height);
-      let r = random(5, 20);
+      let r = random(20, 100);
       this.bubbles.push(new Bubble(x, y, r));
     }
+    this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
   }
 
   get clicEenable() {
-    return this.logoCovered && this.blurAmount <= 0;
+    return this.logoCovered && this.m1.blurAmount <= 0;
   }
 
   show() {
     textSize(24);
-    colorMode(HSL);
-    this.logoIcon.show();
+    rectMode(CENTER);
+    // this.logoIcon.show();
   }
 
   display() {
     background(c.bgColor);
-    this.logoIcon.style('filter', `blur(${this.blurAmount * 10}px)`);
 
-    if (this.blurAmount > 0) {
-      this.blurAmount -= 0.005;
-    }
+    this.m1.display();
+    this.m1.update();
 
     for (let bubble of this.bubbles) {
       bubble.move();
       bubble.repel();
-      bubble.display(this.blurAmount);
+      bubble.display();
     }
 
     this.bubblesCoilide();
@@ -63,6 +61,11 @@ class Home {
     });
 
     if (this.clicEenable) {
+      console.log('clicEenable');
+
+      if (this.m1.isPressed()) {
+        changeScene(SCENES.LOGIN);
+      }
       let buttonHue = frameCount % 360;
       this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
       this.logoIcon.addClass('mousePointer');
@@ -79,6 +82,12 @@ class Bubble {
     this.x = x;
     this.y = y;
     this.r = r;
+    const selectionIndex = Math.floor(Math.random() * (c.tones.length));
+    const selection = c.tones[selectionIndex];
+    selection.selected++;
+    this.c1 = color(selection.toneA.rgb.r, selection.toneA.rgb.g, selection.toneA.rgb.b);
+    this.c2 = color(selection.toneB.rgb.r, selection.toneB.rgb.g, selection.toneB.rgb.b);
+    this.osc = 0;
   }
 
   move() {
@@ -87,20 +96,26 @@ class Bubble {
   }
 
   repel() {
-    let d = dist(this.x, this.y, mouseX, mouseY);
-    if (d < this.r * 6) {
-      let angle = atan2(this.y - mouseY, this.x - mouseX);
-      let force = map(d, 0, this.r * 6, 3, 0);
+    const d = dist(this.x, this.y, mouseX, mouseY);
+    const strength = 3;
+    if (d < this.r * strength) {
+      const angle = atan2(this.y - mouseY, this.x - mouseX);
+      const force = map(d, 0, this.r * strength, 3, 0);
       this.x += cos(angle) * force;
       this.y += sin(angle) * force;
     }
   }
 
   display() {
-    noFill();
-    stroke('#2663fc');
-    strokeWeight(2);
-    ellipse(this.x, this.y, this.r * 2);
+    const color = lerpColor(this.c1, this.c2, this.osc);
+    color.setAlpha(6);
+    fill(color);
+    noStroke();
+    for (let i = 0; i < this.r; i++) {
+      const d = (this.r * 2) * (i / this.r);
+      ellipse(this.x, this.y, d);
+    }
+    this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
   }
 
   colides(buttonX, buttony, buttonWidth, buttonHeigth) {
@@ -111,5 +126,48 @@ class Bubble {
     let distanceY = this.y - closestY;
     let distanceSquared = distanceX * distanceX + distanceY * distanceY;
     return distanceSquared < this.r * this.r;
+  }
+}
+
+class BubbleM {
+  constructor(x, y, content, color, sc) {
+    this.x = x;
+    this.y = y;
+    this.w = textWidth(content) + 70;
+    this.h = textLeading() + 28;
+    this.content = content;
+    this.c = color;
+    this.c.setAlpha(6);
+    this.strokeColor = sc;
+    this.blurAmount = 1;
+  }
+
+  display() {
+    noStroke();
+    fill(this.c);
+    const steps = 100;
+    rect(this.x, this.y, this.w, this.h, 15, 15, 15, 15);
+    for (let i = 0; i < steps; i++) {
+      const rectHeight = this.h * i / steps;
+      const rectWidth = (this.w - this.h) + rectHeight * 0.5;
+      rect(this.x, this.y, rectWidth, rectHeight, 30);
+    }
+    fill(this.strokeColor);
+
+    drawingContext.filter = `blur(${this.blurAmount * 10}px)`;
+    text(this.content, this.x - textWidth(this.content) / 2, this.y + 6);
+    drawingContext.filter = 'none';
+  }
+
+  update() {
+    if (this.blurAmount > 0) {
+      this.blurAmount -= 0.001;
+    }
+  }
+
+  isPressed() {
+    const isOverX = mouseX > this.x && mouseX < this.x + this.w;
+    const isOverY = mouseY > this.y && mouseY < this.y + this.h;
+    return isOverX && isOverY;
   }
 }

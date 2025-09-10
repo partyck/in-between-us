@@ -55,6 +55,7 @@ function draw() {
     default:
       break;
   }
+  // console.log(frameRate());
 }
 
 function changeScene(newScene) {
