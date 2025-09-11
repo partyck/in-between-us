@@ -127,6 +127,7 @@ class MessageInput:
     tone_2: Tone
     color: str
     message_history: list[dict[str, str]]
+    room_id: str
 
     def message_history_prompt(self) -> str:
         if self.message_history:
@@ -166,4 +167,5 @@ class MessageInput:
             tone_2=tone_2,
             message_history=history_m,
             color=color,
+            room_id=data["room"],
         )

@@ -3,6 +3,8 @@ class SocketService {
   constructor() {
     this.socket = io();
     this.listenSockets();
+    const selected = select('.exhibition');
+    this.user_id = (selected) ? selected.elt.getAttribute('id') : '';
   }
 
   listenSockets() {
@@ -37,27 +39,34 @@ class SocketService {
 
   sendMessage(userName, message, tone, messageHistory) {
     console.log('🔌➡️ send message.');
+    const room = this.user_id ? 'EXHIBITION' : '';
     this.socket.emit('send-message', {
       userName,
       message,
       tone,
-      messageHistory
+      messageHistory,
+      room,
     });
   }
 
   sendGhostMessage(userName, tone, messageHistory) {
     console.log('🔌➡️ send gost message.');
+    const room = this.user_id ? 'EXHIBITION' : '';
     this.socket.emit('send-ghost-message', {
       userName,
       tone,
-      messageHistory
+      messageHistory,
+      room,
     });
   }
 
   login(userName) {
     console.log('🔌➡️ loggin in.');
+    const room = this.user_id ? 'EXHIBITION' : '';
     this.socket.emit('login', {
-      userName
+      userName,
+      room,
+      user: this.user_id,
     });
   }
 

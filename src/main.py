@@ -45,15 +45,27 @@ def on_disconnect():
 @socketio.on("login")
 def on_login(data):
     session_id = request.sid  # type: ignore
-    print("on login!", session_id)
     user_name = data["userName"] if isinstance(data, dict) else ""
+    print("on login!", user_name, session_id)
     user = User(session_id=session_id, user_name=user_name)
+    room_id = data["room"]
+    user_side = data["user"]
+    if room_id and user:
+        user_key = "userA" if user_side == "a" else "userB"
+        db.collection(DB_ROOMS).document(room_id).update({user_key: user.to_json()})
+        room_doc = Room.from_json(db.collection(DB_ROOMS).document(room_id).get().to_dict())
+        # print("incomlete room ", room.id)
+        join_room(room_id)
+        socketio.emit("room", room_doc.to_json(), to=room_id)
+        return
+
     incomplete_rooms = getIncompleteRooms()
     added = False
 
     for room in incomplete_rooms:
         db.collection(DB_ROOMS).document(room.id).update({"userB": user.to_json()})
         room_doc = Room.from_json(db.collection(DB_ROOMS).document(room.id).get().to_dict())
+        # print("incomlete room ", room.id)
         join_room(room.id)
         socketio.emit("room", room_doc.to_json(), to=room.id)
         added = True
@@ -61,6 +73,7 @@ def on_login(data):
     if not added:
         new_room = Room(active=True, user_a=user, user_b=None)
         _, room_ref = db.collection(DB_ROOMS).add(new_room.to_json())
+        # print("new room ", room_ref.id)
         join_room(room_ref.id)
 
 
@@ -121,7 +134,7 @@ def event_send_message(data):
     )
     tones_response = completion2.choices[0].message.parsed
 
-    room = getRoom(request.sid)  # type: ignore
+    room = db.collection(DB_ROOMS).document(new_message.room_id) if new_message.room_id else getRoom(request.sid)  # type: ignore
 
     if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
         print(f'new message from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
@@ -182,7 +195,7 @@ def event_send_ghost_message(data):
     )
     tones_response = completion2.choices[0].message.parsed
 
-    room = getRoom(request.sid)  # type: ignore
+    room = db.collection(DB_ROOMS).document(new_message.room_id) if new_message.room_id else getRoom(request.sid)  # type: ignore
 
     if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
         tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
@@ -211,6 +224,18 @@ def event_send_ghost_message(data):
 @app.route("/")
 def route_home():
     return render_template("index.html")
+
+
+@app.route("/a")
+def route_exhibition_a():
+    print("exhibition-a")
+    return render_template("exhibition-a.html")
+
+
+@app.route("/b")
+def route_exhibition_b():
+    print("exhibition-b")
+    return render_template("exhibition-b.html")
 
 
 # HELPERS

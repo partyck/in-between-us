@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <!-- Progressive web app configuration -->
+  <!-- <meta name="apple-mobile-web-app-capable" content="yes"> -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="path/to/your/app-icon.png">
+  <link rel="apple-touch-startup-image" href="path/to/your/startup-image.png">
+  <link rel="manifest" href="/manifest-a.json">
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, shrink-to-fit=no, maximum-scale=1, user-scalable=no">
+  <link href='assets/mov-icon.ico' rel='shortcut icon'>
+  <link rel="stylesheet" href="/stylesheets/index.css">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Michroma&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&display=swap"
+    rel="stylesheet">
+
+  <title>In between us.</title>
+</head>
+
+<body>
+  <span class="exhibition" id="a" hidden></span>
+  <!-- Login elements -->
+  <div id="form" class="login-container hidden">
+    <input id="name-input" type="text" class="name-input" placeholder="Tell me your name... ">
+    <button class="login-button">ok</button>
+  </div>
+
+  <!-- Chat elements -->
+  <div class="header-container hidden">
+    <span class="recipient-name"></span>
+    <button class="home-button">X</button>
+  </div>
+
+  <div class="input-message-container hidden">
+    <textarea class="chat-input"></textarea>
+    <button class="send-button">
+      <img alt="send message" src="assets/message.png" class="send-icon">
+    </button>
+  </div>
+
+  <script src="js/main.js"></script>
+  <script src="js/sockets.js"></script>
+  <script src="js/home.js"></script>
+  <script src="js/loginScene.js"></script>
+  <script src="js/waiting.js"></script>
+  <script src="js/message.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/constants.js"></script>
+  <script src="js/tone.js"></script>
+  <script src="js/sounds.js"></script>
+
+  <!-- libs -->
+  <script src="js/lib/p5.min.js"></script>
+  <script src="js/lib/p5.sound.min.js"></script>
+  <script src="js/lib/socket.io.js"></script>
+</body>
+
+</html>
