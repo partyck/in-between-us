@@ -5,12 +5,13 @@ class Home {
     textSize(24);
     this.logoCovered = false;
 
-    const bubblesLength = width * height * 0.0002;
+    // const bubblesLength = width * height * 0.00001;
+    const bubblesLength = 40;
     this.bubbles = [];
     for (let i = 0; i < bubblesLength; i++) {
       let x = random(width);
       let y = random(height);
-      let r = random(20, 100);
+      let r = random(50, 200);
       this.bubbles.push(new Bubble(x, y, r));
     }
     this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
@@ -28,8 +29,8 @@ class Home {
 
     for (let bubble of this.bubbles) {
       bubble.move();
-      bubble.repel();
       bubble.display();
+      mouseIsPressed && bubble.repel();
     }
 
     this.bubblesCoilide();
@@ -81,8 +82,9 @@ class Bubble {
     color.setAlpha(6);
     fill(color);
     noStroke();
-    for (let i = 0; i < this.r; i++) {
-      const d = (this.r * 2) * (i / this.r);
+    const steps = 50;
+    for (let i = 0; i < steps; i++) {
+      const d = (this.r * 2) * (i / steps);
       ellipse(this.x, this.y, d);
     }
     this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
@@ -116,7 +118,7 @@ class BubbleM {
   display() {
     noStroke();
     fill(this.c);
-    const steps = 100;
+    const steps = 50;
     for (let i = 0; i < steps; i++) {
       const rectHeight = this.h * i / steps;
       const rectWidth = (this.w - this.h) + rectHeight;
