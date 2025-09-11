@@ -61,6 +61,7 @@ class Chat {
 
   show() {
     colorMode(RGB);
+    rectMode(CORNER);
     textSize(16);
     this.recipientNameE.html(`You are talking to ${recipientName}`);
     this.headerContainer.removeClass('hidden');

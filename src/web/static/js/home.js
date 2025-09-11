@@ -4,17 +4,6 @@ class Home {
   constructor() {
     textSize(24);
     this.logoCovered = false;
-    this.logoIcon = createSpan(title);
-    this.logoIcon.class('logo-icon');
-    this.logoIcon.addClass('unselectable');
-
-    this.logoIcon.hide();
-    this.logoIcon.mousePressed(() => {
-      if (this.clicEenable) {
-        this.logoIcon.hide();
-        changeScene(SCENES.LOGIN);
-      }
-    });
 
     const bubblesLength = width * height * 0.0002;
     this.bubbles = [];
@@ -27,21 +16,15 @@ class Home {
     this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
   }
 
-  get clicEenable() {
-    return this.logoCovered && this.m1.blurAmount <= 0;
-  }
-
   show() {
     textSize(24);
     rectMode(CENTER);
-    // this.logoIcon.show();
   }
 
   display() {
     background(c.bgColor);
 
     this.m1.display();
-    this.m1.update();
 
     for (let bubble of this.bubbles) {
       bubble.move();
@@ -53,25 +36,12 @@ class Home {
   }
 
   bubblesCoilide() {
-    let { x: bX, y: bY } = this.logoIcon.position();
-    let bW = this.logoIcon.elt.offsetWidth;
-    let bH = this.logoIcon.elt.offsetHeight;
-    this.logoCovered = !this.bubbles.some((bubble) => {
-      return bubble.colides(bX - bW * 0.5, bY - bH * 0.5, bW, bH);
+    this.logoCovered = this.bubbles.some((bubble) => {
+      return bubble.colides(this.m1.minX, this.m1.minY, this.m1.w, this.m1.h);
     });
 
-    if (this.clicEenable) {
-      console.log('clicEenable');
-
-      if (this.m1.isPressed()) {
-        changeScene(SCENES.LOGIN);
-      }
-      let buttonHue = frameCount % 360;
-      this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
-      this.logoIcon.addClass('mousePointer');
-    } else {
-      this.logoIcon.style("text-shadow", `0px 0px 0px rgb(0 0 0 / 0%)`);
-      this.logoIcon.removeClass('mousePointer');
+    if (!this.logoCovered && this.m1.isPressed()) {
+      changeScene(SCENES.LOGIN);
     }
   }
 }
@@ -118,10 +88,10 @@ class Bubble {
     this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
   }
 
-  colides(buttonX, buttony, buttonWidth, buttonHeigth) {
+  colides(buttonX, buttonY, buttonWidth, buttonHeigth) {
     // returns true if it colides with the logo
     let closestX = constrain(this.x, buttonX, buttonX + buttonWidth);
-    let closestY = constrain(this.y, buttony, buttony + buttonHeigth);
+    let closestY = constrain(this.y, buttonY, buttonY + buttonHeigth);
     let distanceX = this.x - closestX;
     let distanceY = this.y - closestY;
     let distanceSquared = distanceX * distanceX + distanceY * distanceY;
@@ -133,41 +103,33 @@ class BubbleM {
   constructor(x, y, content, color, sc) {
     this.x = x;
     this.y = y;
-    this.w = textWidth(content) + 70;
+    this.w = textWidth(content) + 40;
     this.h = textLeading() + 28;
+    this.minX = this.x - this.w * 0.5;
+    this.minY = this.y - this.h * 0.5;
     this.content = content;
     this.c = color;
     this.c.setAlpha(6);
     this.strokeColor = sc;
-    this.blurAmount = 1;
   }
 
   display() {
     noStroke();
     fill(this.c);
     const steps = 100;
-    rect(this.x, this.y, this.w, this.h, 15, 15, 15, 15);
     for (let i = 0; i < steps; i++) {
       const rectHeight = this.h * i / steps;
-      const rectWidth = (this.w - this.h) + rectHeight * 0.5;
+      const rectWidth = (this.w - this.h) + rectHeight;
       rect(this.x, this.y, rectWidth, rectHeight, 30);
     }
+
     fill(this.strokeColor);
-
-    drawingContext.filter = `blur(${this.blurAmount * 10}px)`;
     text(this.content, this.x - textWidth(this.content) / 2, this.y + 6);
-    drawingContext.filter = 'none';
-  }
-
-  update() {
-    if (this.blurAmount > 0) {
-      this.blurAmount -= 0.001;
-    }
   }
 
   isPressed() {
-    const isOverX = mouseX > this.x && mouseX < this.x + this.w;
-    const isOverY = mouseY > this.y && mouseY < this.y + this.h;
-    return isOverX && isOverY;
+    return mouseIsPressed
+      && (mouseX > this.minX && mouseX < this.minX + this.w)
+      && (mouseY > this.minY && mouseY < this.minY + this.h);
   }
 }

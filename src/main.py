@@ -16,7 +16,7 @@ db = firestore.client()
 app = Flask(__name__, static_url_path="", static_folder="web/static", template_folder="web/templates")
 
 
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=20, ping_interval=5)
 client = OpenAI(api_key=OPENIA_API_KEY)
 
 
