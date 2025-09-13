@@ -20,7 +20,7 @@ const SCENES = Object.freeze({
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  textFont('Arial', 16);
+  textFont('Arial', 20);
   textWrap(WORD);
   textLeading(20);
   init();
@@ -55,7 +55,6 @@ function draw() {
     default:
       break;
   }
-  // console.log(frameRate());
 }
 
 function changeScene(newScene) {

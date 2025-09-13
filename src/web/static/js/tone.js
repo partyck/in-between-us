@@ -8,9 +8,7 @@ class ToneController {
     this.tone2s = 'Informal';
     this.cy1 = height - 100;
     this.cy0 = this.cy1 - height * 0.05;
-    this.cyt = this.cy1 - (this.cy1 - this.cy0) * 0.3;
-    this.cyc = this.cy1 - (this.cy1 - this.cy0) * 0.5;
-
+    this.cyc = this.cy1 - height * 0.025;
     this.sendButton = select('.send-button');
   }
 
@@ -22,7 +20,7 @@ class ToneController {
     for (let index = 0; index < width / 5; index++) {
       noStroke();
       fill(lerpColor(this.tone1c, this.tone2c, (index * 5 / width)));
-      rect(index * 5, this.cy0, index + 5, height * 0.05);
+      rect(index * 5, this.cyc, index + 5, height * 0.05);
     }
 
     fill(this.toneColor);
@@ -32,9 +30,12 @@ class ToneController {
 
     noStroke();
     fill(0);
-    textFont('Roboto Mono');
-    text(this.tone1s, 10, this.cyt);
-    text(this.tone2s, width - 10 - textWidth(this.tone2s), this.cyt);
+    push();
+    textFont('Roboto Mono', 20);
+    textAlign(LEFT, CENTER);
+    text(this.tone1s, 10, this.cyc);
+    text(this.tone2s, width - 10 - textWidth(this.tone2s), this.cyc);
+    pop();
     this.control();
   }
 

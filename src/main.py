@@ -19,6 +19,10 @@ app = Flask(__name__, static_url_path="", static_folder="web/static", template_f
 socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=20, ping_interval=5)
 client = OpenAI(api_key=OPENIA_API_KEY)
 
+# gpt_model = "gpt-5-2025-08-07"
+gpt_model = "gpt-4.1-2025-04-14"
+# gpt_model = "gpt-4o-2024-08-06"
+
 
 # SOCKETS
 @socketio.on("connect")
@@ -107,8 +111,7 @@ def event_send_message(data):
     ]
 
     completion = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
+        model=gpt_model,
         store=True,
         messages=messages,  # type: ignore
         response_format=MessageResponse,
@@ -119,8 +122,7 @@ def event_send_message(data):
         new_message.add_message(message)
 
     completion2 = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
+        model=gpt_model,
         store=True,
         messages=[
             {"role": "developer", "content": TONES_PROMPT},
@@ -168,8 +170,7 @@ def event_send_ghost_message(data):
     ]
 
     completion = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
+        model=gpt_model,
         store=True,
         messages=messages,  # type: ignore
         response_format=MessageResponse,
@@ -180,8 +181,7 @@ def event_send_ghost_message(data):
         new_message.add_message(message)
 
     completion2 = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
+        model=gpt_model,
         store=True,
         messages=[
             {"role": "developer", "content": TONES_PROMPT},

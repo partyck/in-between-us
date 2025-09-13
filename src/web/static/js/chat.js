@@ -19,9 +19,13 @@ class Chat {
     this.bgC = c.bgColor;
     this.isWaiting = true;
     this.count = 0;
-    this.waiting = random(30, 45);
+    this.waiting = this.newWaitingTime();
 
     this.sound = new Sound();
+  }
+
+  newWaitingTime() {
+    return random(30, 45);
   }
 
   get messageHistory() {
@@ -61,8 +65,8 @@ class Chat {
 
   show() {
     colorMode(RGB);
-    rectMode(CORNER);
-    textSize(16);
+    rectMode(CENTER);
+    textSize(20);
     this.recipientNameE.html(`You are talking to ${recipientName}`);
     this.headerContainer.removeClass('hidden');
     this.inputMessageContainer.removeClass('hidden');
@@ -73,7 +77,7 @@ class Chat {
     background(this.bgC);
     this.toneController.display();
 
-    textFont('Arial');
+    textFont('Arial', 20);
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
@@ -108,5 +112,6 @@ class Chat {
     socketService.sendGhostMessage(userName, this.toneController.tonePayload(), this.messageHistory);
     this.count = 0;
     this.isWaiting = true;
+    this.waiting = this.newWaitingTime();
   }
 }

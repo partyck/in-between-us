@@ -174,8 +174,8 @@ textarea {
 }
 
 .send-icon {
-  width: 10px;
-  height: 10px;
+  width: 1.5em;
+  height: 1.5em;
 }
 
 .header-container {
@@ -218,7 +218,7 @@ textarea {
 }
 
 .recipient-name {
-  font-size: 16px;
+  font-size: 20px;
   font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
   font-weight: 300;
 }

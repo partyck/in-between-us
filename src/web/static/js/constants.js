@@ -3,7 +3,7 @@ class Constants {
     this.bgColor = color(225, 237, 242);
     this.sendMessageBGC1 = color(214, 171, 237);
     this.sendMessageBGC2 = color(20, 100, 200);
-    this.receivedMessageC = color(205, 212, 232);
+    this.receivedMessageC = color(0, 242, 96);
     this.tones = [
       {
         toneA: { name: "Informal", rgb: { r: 0, g: 242, b: 96 }, hsl: { h: 144, s: 100, l: 47 } },
