@@ -6,7 +6,14 @@ from flask_socketio import SocketIO, join_room, leave_room
 from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import DB_ROOMS, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from config import (
+    DB_ROOMS,
+    OPENIA_API_KEY,
+    PING_INTERVAL,
+    PING_TIMEOUT,
+    TONES_BY_NAME,
+    TONES_PROMPT,
+)
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
 
 # DB initialize
@@ -16,7 +23,7 @@ db = firestore.client()
 app = Flask(__name__, static_url_path="", static_folder="web/static", template_folder="web/templates")
 
 
-socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=20, ping_interval=5)
+socketio = SocketIO(app, cors_allowed_origins="*", ping_timeout=PING_TIMEOUT, ping_interval=PING_INTERVAL)
 client = OpenAI(api_key=OPENIA_API_KEY)
 
 # gpt_model = "gpt-5-2025-08-07"

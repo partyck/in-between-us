@@ -5,6 +5,10 @@ from models import ToneOptions
 with open("config.toml", mode="rb") as fp:
     config = tomllib.load(fp)
 
+# socket
+PING_TIMEOUT = 20
+PING_INTERVAL = 40
+
 # openIA
 OPENIA_API_KEY: str = config["openia_api_key"]
 DB_ROOMS: str = "rooms-" + config["dever"]
