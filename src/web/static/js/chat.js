@@ -25,7 +25,7 @@ class Chat {
   }
 
   newWaitingTime() {
-    return random(30, 45);
+    return random(40, 90);
   }
 
   get messageHistory() {
