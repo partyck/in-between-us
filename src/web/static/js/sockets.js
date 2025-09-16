@@ -2,9 +2,9 @@ class SocketService {
 
   constructor() {
     this.socket = io();
-    this.listenSockets();
     const selected = select('.exhibition');
     this.user_id = (selected) ? selected.elt.getAttribute('id') : '';
+    this.listenSockets();
   }
 
   listenSockets() {
@@ -60,8 +60,9 @@ class SocketService {
     });
   }
 
-  login(userName) {
+  login(name) {
     console.log('🔌➡️ loggin in.');
+    const userName = name ? name : this.user_id === 'a' ? "Someone" : "Somebody";
     const room = this.user_id ? 'EXHIBITION' : '';
     this.socket.emit('login', {
       userName,
