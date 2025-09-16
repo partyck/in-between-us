@@ -5,8 +5,8 @@ class Home {
     textSize(24);
     this.logoCovered = false;
 
-    // const bubblesLength = width * height * 0.00001;
-    const bubblesLength = 40;
+    const bubblesLength = width * height * 0.00004;
+    // const bubblesLength = 40;
     this.bubbles = [];
     for (let i = 0; i < bubblesLength; i++) {
       let x = random(width);
@@ -26,12 +26,15 @@ class Home {
     background(c.bgColor);
 
     this.m1.display();
-
+    let isEnded = this.bubbles[0].isOut();
     for (let bubble of this.bubbles) {
       bubble.move();
       bubble.display();
       mouseIsPressed && bubble.repel();
+      isEnded = isEnded && bubble.isOut();
     }
+
+    isEnded && changeScene(SCENES.LOGIN);
 
     this.bubblesCoilide();
   }
@@ -41,8 +44,10 @@ class Home {
       return bubble.colides(this.m1.minX, this.m1.minY, this.m1.w, this.m1.h);
     });
 
-    if (!this.logoCovered && this.m1.isPressed()) {
-      changeScene(SCENES.LOGIN);
+    if (this.m1.isPressed()) {
+      for (let bubble of this.bubbles) {
+        bubble.isRepelAll = true;
+      }
     }
   }
 }
@@ -59,11 +64,21 @@ class Bubble {
     this.c1 = color(selection.toneA.rgb.r, selection.toneA.rgb.g, selection.toneA.rgb.b);
     this.c2 = color(selection.toneB.rgb.r, selection.toneB.rgb.g, selection.toneB.rgb.b);
     this.osc = 0;
+    this.isRepelAll = false;
   }
 
   move() {
-    this.y = constrain(this.y + random(-1, 1), 20, height - 20);
-    this.x = constrain(this.x + random(-1, 1), 20, width - 20);
+    if (this.isRepelAll) {
+      const force = 5;
+      const angle = atan2(this.y - mouseY, this.x - mouseX);
+      this.x += cos(angle) * force;
+      this.y += sin(angle) * force;
+    }
+    else {
+      this.y = constrain(this.y + random(-1, 1), 20, height - 20);
+      this.x = constrain(this.x + random(-1, 1), 20, width - 20);
+    }
+
   }
 
   repel() {
@@ -98,6 +113,10 @@ class Bubble {
     let distanceY = this.y - closestY;
     let distanceSquared = distanceX * distanceX + distanceY * distanceY;
     return distanceSquared < this.r * this.r;
+  }
+
+  isOut() {
+    return (this.x > width || this.x < 0 || this.y > height || this.y < 0);
   }
 }
 
