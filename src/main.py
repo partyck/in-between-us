@@ -1,12 +1,15 @@
 import os
+import threading
+import uuid
+from typing import Optional
 
+from eventlet import tpool
 from firebase_admin import firestore, initialize_app
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room
-from google.cloud.firestore_v1.base_query import FieldFilter, Or
 from openai import OpenAI
 
-from config import DB_ROOMS, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from config import OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
 
 # DB initialize
@@ -16,8 +19,16 @@ db = firestore.client()
 app = Flask(__name__, static_url_path="", static_folder="web/static", template_folder="web/templates")
 
 
-socketio = SocketIO(app, cors_allowed_origins="*")
-client = OpenAI(api_key=OPENIA_API_KEY)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+client = OpenAI(api_key=OPENIA_API_KEY, timeout=20, max_retries=1)
+
+# PAIRING
+# Only the two installations talk to each other, so pairing lives in memory instead of the DB.
+# A restart drops every pairing, and the clients log in again when they reconnect.
+pairing_lock = threading.Lock()
+waiting_user: Optional[User] = None
+partners: dict[str, User] = {}  # session id -> the user they are talking to
+rooms: dict[str, str] = {}  # session id -> room id
 
 
 # SOCKETS
@@ -30,179 +41,62 @@ def on_connect():
 def on_disconnect():
     session_id = request.sid  # type: ignore
     print("on_disconnect", session_id)
-    room = getRoom(session_id)
-
-    if room:
-        room_ref = db.collection(DB_ROOMS).document(room.id)
-        room_doc = Room.from_json(room_ref.get().to_dict())
-        other_user = room_doc.user_a if room_doc.user_a.session_id == session_id else room_doc.user_b
-        if other_user:
-            socketio.emit("userdisconnect", {"message": "user disconnected."}, to=room.id)
-            leave_room(room.id, other_user.session_id)
-        room_ref.update({"active": False})
+    end_session(session_id, "userdisconnect", "user disconnected.")
 
 
 @socketio.on("login")
 def on_login(data):
+    global waiting_user
     session_id = request.sid  # type: ignore
     print("on login!", session_id)
     user_name = data["userName"] if isinstance(data, dict) else ""
     user = User(session_id=session_id, user_name=user_name)
-    incomplete_rooms = getIncompleteRooms()
-    added = False
+    end_session(session_id, "userdisconnect", "user disconnected.")
 
-    for room in incomplete_rooms:
-        db.collection(DB_ROOMS).document(room.id).update({"userB": user.to_json()})
-        room_doc = Room.from_json(db.collection(DB_ROOMS).document(room.id).get().to_dict())
-        join_room(room.id)
-        socketio.emit("room", room_doc.to_json(), to=room.id)
-        added = True
-        continue
-    if not added:
-        new_room = Room(active=True, user_a=user, user_b=None)
-        _, room_ref = db.collection(DB_ROOMS).add(new_room.to_json())
-        join_room(room_ref.id)
+    with pairing_lock:
+        partner = waiting_user if waiting_user and waiting_user.session_id != session_id else None
+        if not partner:
+            waiting_user = user
+            return
+        waiting_user = None
+        room_id = uuid.uuid4().hex
+        partners[session_id], partners[partner.session_id] = partner, user
+        rooms[session_id] = rooms[partner.session_id] = room_id
+
+    join_room(room_id)
+    join_room(room_id, partner.session_id)
+    socketio.emit("room", Room(active=True, user_a=partner, user_b=user).to_json(), to=room_id)
 
 
 @socketio.on("logout")
 def on_logout():
     session_id = request.sid  # type: ignore
     print("on logout", session_id)
-    room = getRoom(session_id)
-    if room:
-        leave_room(room.id, session_id)
-        room_ref = db.collection(DB_ROOMS).document(room.id)
-        room_doc = Room.from_json(room_ref.get().to_dict())
-        other_user = room_doc.user_a if room_doc.user_a.session_id == session_id else room_doc.user_b
-        if other_user:
-            # socketio.emit("userdisconnect", {"message": "user has entered the room."}, to=room.id)
-            socketio.emit("logout", {"message": "user has logged out."}, to=room.id)
-            leave_room(room.id, other_user.session_id)
-        room_ref.update({"active": False})
+    end_session(session_id, "logout", "user has logged out.")
 
 
 @socketio.on("send-message")
 def event_send_message(data):
     new_message = MessageInput.from_json(data)
     print(f'new message from: {new_message.user_name} prompt: "{new_message.message}"')
-    messages = [
-        {"role": "developer", "content": new_message.message_history_prompt()},
-        {
-            "role": "developer",
-            "content": f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. Do not change the meaning and do not use place holders.',
-        },
-    ]
-
-    completion = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
-        store=True,
-        messages=messages,  # type: ignore
-        response_format=MessageResponse,
+    respond(
+        request.sid,  # type: ignore
+        new_message,
+        f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. Do not change the meaning and do not use place holders.',
+        "new message",
     )
-    message = completion.choices[0].message.parsed
-
-    if message:
-        new_message.add_message(message)
-
-    completion2 = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
-        store=True,
-        messages=[
-            {"role": "developer", "content": TONES_PROMPT},
-            {"role": "developer", "content": new_message.message_history_prompt()},
-            {
-                "role": "developer",
-                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
-            },
-        ],  # type: ignore
-        response_format=ToneResponse,
-    )
-    tones_response = completion2.choices[0].message.parsed
-
-    room = getRoom(request.sid)  # type: ignore
-
-    if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
-        print(f'new message from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
-        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
-        current_color = new_message.color
-        db.collection("color").document("color").set({"color": current_color})
-        socketio.emit(
-            "response-message",
-            {
-                "message": message.message,
-                "userName": new_message.user_name,
-                "prompt": new_message.message,
-                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
-                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
-                "color": current_color,
-            },
-            to=room.id,
-        )
 
 
 @socketio.on("send-ghost-message")
 def event_send_ghost_message(data):
     new_message = MessageInput.from_json(data)
     print(f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}"')
-    messages = [
-        {"role": "developer", "content": new_message.message_history_prompt()},
-        {
-            "role": "developer",
-            "content": f"Based on the past conversation, generate the next message on behalf of  {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. The message should be less than 80 characters long. do not use place holders.",
-        },
-    ]
-
-    completion = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
-        store=True,
-        messages=messages,  # type: ignore
-        response_format=MessageResponse,
+    respond(
+        request.sid,  # type: ignore
+        new_message,
+        f"Based on the past conversation, generate the next message on behalf of  {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. The message should be less than 80 characters long. do not use place holders.",
+        "new ghost message",
     )
-    message = completion.choices[0].message.parsed
-
-    if message:
-        new_message.add_message(message)
-
-    completion2 = client.beta.chat.completions.parse(
-        # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
-        store=True,
-        messages=[
-            {"role": "developer", "content": TONES_PROMPT},
-            {"role": "developer", "content": new_message.message_history_prompt()},
-            {
-                "role": "developer",
-                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
-            },
-        ],  # type: ignore
-        response_format=ToneResponse,
-    )
-    tones_response = completion2.choices[0].message.parsed
-
-    room = getRoom(request.sid)  # type: ignore
-
-    if room and isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
-        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
-        current_color = new_message.color
-        print(
-            f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"'
-        )
-        db.collection("color").document("color").set({"color": current_color})
-        socketio.emit(
-            "response-message",
-            {
-                "message": message.message,
-                "userName": new_message.user_name,
-                "prompt": new_message.message,
-                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
-                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
-                "color": current_color,
-            },
-            to=room.id,
-        )
 
 
 # ROUTES
@@ -214,35 +108,87 @@ def route_home():
 
 
 # HELPERS
-def getRoom(userSId: str):
-    rooms = [
-        room
-        for room in (
-            db.collection(DB_ROOMS)
-            .where(
-                filter=Or(
-                    [FieldFilter("userB.sessionId", "==", userSId), FieldFilter("userA.sessionId", "==", userSId)]
-                )
-            )
-            .stream()
-        )
-    ]
-    if len(rooms) == 1:
-        return rooms[0]
-    else:
-        return None
+def end_session(session_id: str, event: str, message: str):
+    """Takes the user out of the waiting slot or their room, and sends `event` to their partner."""
+    global waiting_user
+    with pairing_lock:
+        if waiting_user and waiting_user.session_id == session_id:
+            waiting_user = None
+        partner = partners.pop(session_id, None)
+        room_id = rooms.pop(session_id, None)
+        if partner:
+            partners.pop(partner.session_id, None)
+            rooms.pop(partner.session_id, None)
+
+    if partner and room_id:
+        leave_room(room_id, session_id)
+        leave_room(room_id, partner.session_id)
+        socketio.emit(event, {"message": message}, to=partner.session_id)
 
 
-def getIncompleteRooms():
-    return [
-        room
-        for room in (
-            db.collection(DB_ROOMS)
-            .where(filter=FieldFilter("active", "==", True))
-            .where(filter=FieldFilter("userB", "==", None))
-            .stream()
+def respond(session_id: str, new_message: MessageInput, instruction: str, label: str):
+    """Generates the message and the next pair of tones, and sends them to the user's room."""
+    room_id = rooms.get(session_id)
+    if not room_id:
+        return
+
+    message = parse_completion(
+        [
+            {"role": "developer", "content": new_message.message_history_prompt()},
+            {"role": "developer", "content": instruction},
+        ],
+        MessageResponse,
+    )
+
+    if message:
+        new_message.add_message(message)
+
+    tones_response = parse_completion(
+        [
+            {"role": "developer", "content": TONES_PROMPT},
+            {"role": "developer", "content": new_message.message_history_prompt()},
+            {
+                "role": "developer",
+                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+            },
+        ],
+        ToneResponse,
+    )
+
+    # The pairing may have ended or changed while OpenAI was answering.
+    if rooms.get(session_id) != room_id:
+        return
+
+    if isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
+        print(f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
+        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
+        current_color = new_message.color
+        db.collection("color").document("color").set({"color": current_color})
+        socketio.emit(
+            "response-message",
+            {
+                "message": message.message,
+                "userName": new_message.user_name,
+                "prompt": new_message.message,
+                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
+                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
+                "color": current_color,
+            },
+            to=room_id,
         )
-    ]
+
+
+def parse_completion(messages: list, response_format):
+    # OpenAI calls block, so run them in a real thread; otherwise every other client freezes while one waits.
+    completion = tpool.execute(
+        client.beta.chat.completions.parse,
+        # model="gpt-4o-mini",
+        model="gpt-4o-2024-08-06",
+        store=True,
+        messages=messages,
+        response_format=response_format,
+    )
+    return completion.choices[0].message.parsed  # type: ignore
 
 
 if __name__ == "__main__":

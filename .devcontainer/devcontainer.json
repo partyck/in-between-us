@@ -53,7 +53,7 @@
 				"ms-python.pylint",
 				"ms-python.vscode-pylance",
 				"mhutchie.git-graph",
-				"visualstudioexptteam.vscodeintellicode"
+				"anthropic.claude-code"
 			]
 		}
 	},

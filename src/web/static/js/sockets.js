@@ -6,8 +6,13 @@ class SocketService {
   }
 
   listenSockets() {
-    this.socket.on('connect', function (data) {
-      console.log('🔌⬅️ Socket connected!', data);
+    this.socket.on('connect', () => {
+      console.log('🔌⬅️ Socket connected!');
+      // A reconnect gets a new session id, so the server no longer knows this client: queue up again.
+      if (this.hasConnected && userName) {
+        chat.backToWaiting();
+      }
+      this.hasConnected = true;
     });
 
     this.socket.on('disconnect', function (data) {
@@ -21,7 +26,7 @@ class SocketService {
 
     this.socket.on('userdisconnect', (data) => {
       console.log('🔌⬅️ user disconected!', data);
-      chat.recipientDisconnected();
+      chat.backToWaiting();
     });
 
     this.socket.on('logout', (data) => {

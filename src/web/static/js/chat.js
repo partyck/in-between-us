@@ -92,7 +92,7 @@ class Chat {
     }
   }
 
-  recipientDisconnected() {
+  backToWaiting() {
     this.messages = [];
     this.headerContainer.addClass('hidden');
     this.inputMessageContainer.addClass('hidden');
