@@ -127,7 +127,5 @@ class Message {
 
 		this.height = lineCount * textLeading();
 		this.width = maxWidth;
-
-		return lineCount * textLeading();
 	}
 }

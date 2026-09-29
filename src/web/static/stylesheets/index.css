@@ -19,6 +19,21 @@ textarea {
 
 /* Home Scene */
 
+.message-bubble {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background-color: #007bff;
+  color: white;
+  padding: 10px 10px;
+  border-radius: 20px;
+}
+
+.message-bubble>p {
+  font-family: "Arial";
+  margin: 0;
+}
+
 .logo-icon {
   position: absolute;
   top: 50%;
