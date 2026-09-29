@@ -77,6 +77,12 @@ class Home {
 }
 
 
+// A bubble looks like r stacked circles of alpha 6/255 (radii 0..r): a point at distance d from the
+// centre is under r - d of them, so its opacity is 1 - (1 - 6/255)^(r - d). A radial gradient following
+// that curve draws the same thing in one fill instead of r.
+const BUBBLE_LAYER_ALPHA = 6 / 255;
+const BUBBLE_GRADIENT_STOPS = 10;
+
 class Bubble {
   constructor(x, y, r) {
     this.x = x;
@@ -88,6 +94,13 @@ class Bubble {
     this.c1 = color(selection.toneA.rgb.r, selection.toneA.rgb.g, selection.toneA.rgb.b);
     this.c2 = color(selection.toneB.rgb.r, selection.toneB.rgb.g, selection.toneB.rgb.b);
     this.osc = 0;
+
+    this.falloff = [];
+    for (let i = 0; i <= BUBBLE_GRADIENT_STOPS; i++) {
+      const offset = i / BUBBLE_GRADIENT_STOPS;
+      const layers = r * (1 - offset);
+      this.falloff.push([offset, 1 - Math.pow(1 - BUBBLE_LAYER_ALPHA, layers)]);
+    }
   }
 
   move() {
@@ -107,14 +120,18 @@ class Bubble {
   }
 
   display() {
-    const color = lerpColor(this.c1, this.c2, this.osc);
-    color.setAlpha(6);
-    fill(color);
-    noStroke();
-    for (let i = 0; i < this.r; i++) {
-      const d = (this.r * 2) * (i / this.r);
-      ellipse(this.x, this.y, d);
+    const [red, green, blue] = lerpColor(this.c1, this.c2, this.osc).levels;
+    const gradient = drawingContext.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+    for (const [offset, alpha] of this.falloff) {
+      gradient.addColorStop(offset, `rgba(${red}, ${green}, ${blue}, ${alpha})`);
     }
+    // save/restore so setting fillStyle directly doesn't leave p5's cached fill out of sync.
+    drawingContext.save();
+    drawingContext.fillStyle = gradient;
+    drawingContext.beginPath();
+    drawingContext.arc(this.x, this.y, this.r, 0, TWO_PI);
+    drawingContext.fill();
+    drawingContext.restore();
     this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
   }
 
