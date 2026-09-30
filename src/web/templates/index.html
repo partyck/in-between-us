@@ -61,6 +61,30 @@
     </div>
   </section>
 
+  <section id="setup-scene" class="hidden">
+    <div class="notice-container">
+      <span class="notice-text unselectable">Set up this installation</span>
+      <div class="button-row">
+        <button class="plain-button station-button" data-station="A">A</button>
+        <button class="plain-button station-button" data-station="B">B</button>
+      </div>
+      <input id="station-key-input" type="text" class="name-input" placeholder="Station key" autocomplete="off"
+        autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button class="plain-button setup-save-button">ok</button>
+      <span class="setup-message"></span>
+    </div>
+  </section>
+
+  <section id="closed-scene" class="hidden">
+    <div class="notice-container">
+      <span class="notice-text unselectable">This installation was opened on another screen.</span>
+      <div class="button-row">
+        <button class="plain-button closed-reload-button">Use this screen</button>
+        <button class="plain-button closed-setup-button">Change station</button>
+      </div>
+    </div>
+  </section>
+
   <script src="js/main.js"></script>
   <script src="js/sockets.js"></script>
   <script src="js/scene.js"></script>
@@ -69,6 +93,8 @@
   <script src="js/waiting.js"></script>
   <script src="js/message.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/closed.js"></script>
+  <script src="js/setup.js"></script>
   <script src="js/constants.js"></script>
   <script src="js/tone.js"></script>
   <script src="js/sounds.js"></script>

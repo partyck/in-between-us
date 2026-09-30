@@ -130,6 +130,63 @@ textarea {
   white-space: normal;
 }
 
+/* Setup and Closed */
+
+.notice-container {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(90vw, 600px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.notice-text {
+  font-size: 1.3rem;
+  font-family: "Michroma", sans-serif;
+  font-weight: 600;
+  cursor: default;
+  color: #004275;
+  text-align: center;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
+}
+
+.plain-button {
+  color: #004275;
+  background-color: #ffffff;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-family: "HelveticaNeue-Light", "Helvetica Neue Light", "Helvetica Neue", Helvetica, Arial, "Lucida Grande", sans-serif;
+  border: 2px solid #004275;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.plain-button.selected,
+.plain-button:active {
+  color: #ffffff;
+  background-color: #004275;
+}
+
+.station-button {
+  font-family: "Michroma", sans-serif;
+  font-size: 1.3rem;
+}
+
+.setup-message {
+  min-height: 1.5em;
+  color: #585656;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+
 /* Chat Scene */
 
 .send-button {

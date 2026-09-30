@@ -3,6 +3,8 @@ let home;
 let login;
 let waiting;
 let chat;
+let closed;
+let setupScene;
 let c;
 
 let userName;
@@ -26,7 +28,17 @@ function init() {
   login = new LoginScene();
   waiting = new Waiting();
   chat = new Chat();
-  changeScene(home);
+  closed = new Closed();
+  setupScene = new Setup();
+
+  let credentials = setupScene.savedCredentials();
+  if (credentials) {
+    socketService.connect(credentials);
+    changeScene(home);
+  }
+  else {
+    setupScene.show();
+  }
 }
 
 function draw() {

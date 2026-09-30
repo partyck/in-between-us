@@ -1,5 +1,5 @@
 // A screen of the app. Each scene owns one root element in index.html, which is shown while the scene is current.
-// Scenes can also handle socket events by defining onRoom, onMessage, onPartnerLeft or onReconnect.
+// Scenes can also handle socket events by defining onConnect, onRoom, onMessage, onPartnerLeft or onReconnect.
 class Scene {
   constructor(rootId) {
     this.root = select(`#${rootId}`);
