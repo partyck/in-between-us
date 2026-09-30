@@ -1,18 +1,13 @@
-const title = 'In between us.';
+const HOME_TEXT_SIZE = 24;
 
-class Home {
+class Home extends Scene {
   constructor() {
-    textSize(24);
+    super('home-scene');
     this.logoCovered = false;
-    this.logoIcon = createSpan(title);
-    this.logoIcon.class('logo-icon');
-    this.logoIcon.addClass('unselectable');
-
-    this.logoIcon.hide();
+    this.logoIcon = select('.logo-icon');
     this.logoIcon.mousePressed(() => {
       if (this.clicEenable) {
-        this.logoIcon.hide();
-        changeScene(SCENES.LOGIN);
+        changeScene(login);
       }
     });
 
@@ -24,20 +19,20 @@ class Home {
       let r = random(20, 100);
       this.bubbles.push(new Bubble(x, y, r));
     }
+    // BubbleM measures its text when it's created, so it needs the text size draw() uses.
+    push();
+    textSize(HOME_TEXT_SIZE);
     this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
+    pop();
   }
 
   get clicEenable() {
     return this.logoCovered && this.m1.blurAmount <= 0;
   }
 
-  show() {
-    textSize(24);
+  draw() {
+    textSize(HOME_TEXT_SIZE);
     rectMode(CENTER);
-    // this.logoIcon.show();
-  }
-
-  display() {
     background(c.bgColor);
 
     this.m1.display();
@@ -61,10 +56,10 @@ class Home {
     });
 
     if (this.clicEenable) {
-      console.log('clicEenable');
+      // console.log('clicEenable');
 
       if (this.m1.isPressed()) {
-        changeScene(SCENES.LOGIN);
+        changeScene(login);
       }
       let buttonHue = frameCount % 360;
       this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);

@@ -6,11 +6,11 @@ class SocketService {
   }
 
   listenSockets() {
+    // Events go to the current scene, and scenes that don't handle one ignore it.
     this.socket.on('connect', () => {
       console.log('🔌⬅️ Socket connected!');
-      // A reconnect gets a new session id, so the server no longer knows this client: queue up again.
-      if (this.hasConnected && userName) {
-        chat.backToWaiting();
+      if (this.hasConnected) {
+        currentScene.onReconnect?.();
       }
       this.hasConnected = true;
     });
@@ -21,12 +21,12 @@ class SocketService {
 
     this.socket.on('room', (data) => {
       console.log('🔌⬅️ room!', data);
-      waiting.newRoom(data);
+      currentScene.onRoom?.(data);
     });
 
     this.socket.on('userdisconnect', (data) => {
       console.log('🔌⬅️ user disconected!', data);
-      chat.backToWaiting();
+      currentScene.onPartnerLeft?.();
     });
 
     this.socket.on('logout', (data) => {
@@ -36,7 +36,7 @@ class SocketService {
 
     this.socket.on('response-message', function (data) {
       console.log('🔌⬅️ response message!', data);
-      chat.add(data.message, data.userName, data.prompt, data.tone1, data.tone2, data.color);
+      currentScene.onMessage?.(data);
     });
   }
 

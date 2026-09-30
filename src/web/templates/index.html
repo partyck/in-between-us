@@ -31,27 +31,39 @@
     <p>This is a blue meskdnl;f asdlkjh a;lsdh f;laskh lkajsdh lkjashdlkfjashdk jfflshsage bubble!</p>
   </div> -->
 
-  <!-- Login elements -->
-  <div id="form" class="login-container hidden">
-    <input id="name-input" type="text" class="name-input" placeholder="Tell me your name... ">
-    <button class="login-button">ok</button>
-  </div>
+  <!-- Each scene's DOM elements, shown while the scene is current (see scene.js) -->
+  <section id="home-scene" class="hidden">
+    <span class="logo-icon unselectable hidden">In between us.</span>
+  </section>
 
-  <!-- Chat elements -->
-  <div class="header-container hidden">
-    <span class="recipient-name"> my name is Gemini</span>
-    <button class="home-button">X</button>
-  </div>
+  <section id="login-scene" class="hidden">
+    <div class="login-container">
+      <input id="name-input" type="text" class="name-input" placeholder="Tell me your name... ">
+      <button class="login-button">ok</button>
+    </div>
+  </section>
 
-  <div class="input-message-container hidden">
-    <textarea class="chat-input"></textarea>
-    <button class="send-button">
-      <img alt="send message" src="assets/message.png" class="send-icon">
-    </button>
-  </div>
+  <section id="waiting-scene" class="hidden">
+    <span class="waiting-text unselectable">Waiting for someone to join.</span>
+  </section>
+
+  <section id="chat-scene" class="hidden">
+    <div class="header-container">
+      <span class="recipient-name"> my name is Gemini</span>
+      <button class="home-button">X</button>
+    </div>
+
+    <div class="input-message-container">
+      <textarea class="chat-input"></textarea>
+      <button class="send-button">
+        <img alt="send message" src="assets/message.png" class="send-icon">
+      </button>
+    </div>
+  </section>
 
   <script src="js/main.js"></script>
   <script src="js/sockets.js"></script>
+  <script src="js/scene.js"></script>
   <script src="js/home.js"></script>
   <script src="js/loginScene.js"></script>
   <script src="js/waiting.js"></script>

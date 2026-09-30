@@ -1,34 +1,35 @@
-const waitingTitle = 'Waiting for someone to join.';
-
-class Waiting {
+class Waiting extends Scene {
 
   constructor() {
-    this.waitingText = createSpan(waitingTitle);
-    this.waitingText.class('waiting-text');
-    this.waitingText.addClass('unselectable');
-    this.waitingText.hide();
+    super('waiting-scene');
+    this.waitingText = select('.waiting-text');
   }
 
-  show() {
-    textSize(24);
-    colorMode(HSL);
-    this.waitingText.show();
-  }
-
-  display() {
+  draw() {
     background(c.bgColor);
     let buttonHue = frameCount % 360;
     this.waitingText.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
+    updateTimer();
   }
 
-  newRoom(room) {
+  // Shows the waiting screen and asks the server for a partner.
+  join() {
+    changeScene(this);
+    socketService.login(userName);
+  }
+
+  onRoom(room) {
     if (room.userA.userName === userName) {
       recipientName = room.userB.userName;
     }
     else {
       recipientName = room.userA.userName;
     }
-    this.waitingText.hide();
-    changeScene(SCENES.CHAT);
+    changeScene(chat);
+  }
+
+  // A reconnect gets a new session id, so the server no longer knows this client: queue up again.
+  onReconnect() {
+    this.join();
   }
 }

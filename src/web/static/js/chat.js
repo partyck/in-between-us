@@ -1,11 +1,10 @@
-class Chat {
+class Chat extends Scene {
 
   constructor() {
+    super('chat-scene');
     this.messages = [];
 
     this.recipientNameE = select('.recipient-name');
-    this.headerContainer = select('.header-container');
-    this.inputMessageContainer = select('.input-message-container');
     this.messageInput = select('.chat-input');
     this.sendButton = select('.send-button');
     this.closeButton = select('.home-button');
@@ -59,20 +58,22 @@ class Chat {
     }
   }
 
-  show() {
-    colorMode(RGB);
-    textSize(16);
+  enter() {
+    super.enter();
     this.recipientNameE.html(`You are talking to ${recipientName}`);
-    this.headerContainer.removeClass('hidden');
-    this.inputMessageContainer.removeClass('hidden');
     this.toneController.setToneValue();
   }
 
-  display() {
+  exit() {
+    super.exit();
+    this.messages = [];
+  }
+
+  draw() {
     background(this.bgC);
     this.toneController.display();
 
-    textFont('Arial');
+    textFont(MESSAGE_FONT, MESSAGE_TEXT_SIZE);
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
@@ -92,12 +93,16 @@ class Chat {
     }
   }
 
-  backToWaiting() {
-    this.messages = [];
-    this.headerContainer.addClass('hidden');
-    this.inputMessageContainer.addClass('hidden');
-    changeScene(SCENES.WAITING);
-    socketService.login(userName);
+  onMessage(data) {
+    this.add(data.message, data.userName, data.prompt, data.tone1, data.tone2, data.color);
+  }
+
+  onPartnerLeft() {
+    waiting.join();
+  }
+
+  onReconnect() {
+    waiting.join();
   }
 
   ghostMessage() {

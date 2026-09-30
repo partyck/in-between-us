@@ -1,7 +1,7 @@
-class LoginScene {
+class LoginScene extends Scene {
 
   constructor() {
-    this.container = select('#form');
+    super('login-scene');
     let inputE = select('#name-input');
     this.submitButton = select('.login-button');
 
@@ -9,21 +9,15 @@ class LoginScene {
       if (inputE.value()) {
         userName = inputE.value();
         inputE.value('');
-        this.container.addClass('hidden');
-        changeScene(SCENES.WAITING);
-        socketService.login(userName);
+        waiting.join();
       }
     });
   }
 
-  show() {
-    this.container.removeClass('hidden');
-    colorMode(HSL);
-  }
-
-  display() {
+  draw() {
     background(c.bgColor);
     let buttonHue = frameCount % 360;
     this.submitButton.style("background-color", `hsl(${buttonHue}deg 100 50)`);
+    updateTimer();
   }
 }

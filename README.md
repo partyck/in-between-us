@@ -4,7 +4,7 @@ A chat between two installations. Each visitor types a name and is paired with w
 
 ## Session flow
 
-The client moves through four scenes ([main.js](src/web/static/js/main.js)): Home → Login → Waiting → Chat.
+The client moves through four scenes ([scene.js](src/web/static/js/scene.js), switched by `changeScene` in [main.js](src/web/static/js/main.js)): Home → Login → Waiting → Chat.
 
 1. **Login.** The visitor enters a name. The client emits `login` and shows the waiting screen.
 2. **Pairing.** The server keeps a single waiting slot. If it's empty, the new user takes it. If someone is already waiting, the two are paired and put in a Socket.IO room, and both receive `room`.

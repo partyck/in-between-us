@@ -1,3 +1,7 @@
+// Messages are measured when they're created, outside draw(), so measuring and drawing both set this style.
+const MESSAGE_FONT = 'Arial';
+const MESSAGE_TEXT_SIZE = 16;
+
 class Message {
 	constructor(content, newUserName, bgColor = c.receivedMessageC, isWaiting = true) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
@@ -98,6 +102,8 @@ class Message {
 	}
 
 	calculateTextWidthAndHeight() {
+		push();
+		textFont(MESSAGE_FONT, MESSAGE_TEXT_SIZE);
 		const lines = this.content.split('\n');
 		let lineCount = 0;
 		let maxWidth = 0;
@@ -127,5 +133,6 @@ class Message {
 
 		this.height = lineCount * textLeading();
 		this.width = maxWidth;
+		pop();
 	}
 }
