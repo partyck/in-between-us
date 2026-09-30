@@ -10,19 +10,16 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Where to start
 
-1. **S8 plus S4.** Station pairing and server-side limits together close the public door and cap the cost.
+1. **S4, server-side limits.** Since S8 only the installations can connect, so the limits now guard against a leaked key and client bugs rather than strangers. Set the OpenAI budget limit either way.
 2. **A3, server-side history with message ids.** One change that fixes P2, P3, P8, S5 and F5.
 3. **P1, an error path.** Visitors stop seeing messages that never arrive.
 
 ## High
 
-- [ ] **S4. OpenAI spend has no limit.** The server doesn't limit event rate, message length or history length (names are capped since S1). Every `send-message` or `send-ghost-message` costs two GPT-4o calls with whatever history the client sends. A script can open two sockets, pair them with each other, and loop `send-ghost-message` with a large fake history.
-  Fix: enforce limits on the server: maximum message length, a cap on history items and total size, one request in flight per session, and a minimum interval between events. Set a budget limit on the OpenAI project. S8 closes the rest.
+- [ ] **S4. OpenAI spend has no limit.** The server doesn't limit event rate, message length or history length (names are capped since S1). Every `send-message` or `send-ghost-message` costs two GPT-4o calls with whatever history the client sends. Since S8 a script needs the station key to connect, but with the key it can pair stations A and B and loop `send-ghost-message` with a large fake history.
+  Fix: enforce limits on the server: maximum message length, a cap on history items and total size, one request in flight per session, and a minimum interval between events. Set a budget limit on the OpenAI project.
 
-- [ ] **S8. Only pair the two installations.** Anyone who opens the URL can take an installation's waiting slot: a phone with the link, a second browser tab, or a developer's machine. Pairing is first come, first served in [`on_login`](src/main.py#L51), and CORS allows any origin ([main.py:23](src/main.py#L23)).
-  Fix: give each installation a station name and a shared secret (e.g. `/?station=A&key=…`). The server then only pairs station A with station B and rejects every other login.
-
-- [ ] **P1. A failed message spins forever.** There's no error path. If OpenAI times out or refuses (`parsed` is `None`), returns an unknown tone (A6), or the payload is malformed, the handler simply ends ([main.py:147-182](src/main.py#L147-L182)). Nothing is emitted, and the sender's bubble keeps its waiting animation with no retry. There are no acknowledgements, no error event and no `@socketio.on_error_default` handler. On a refusal, the second OpenAI call still runs.
+- [ ] **P1. A failed message spins forever.** There's no error path. If OpenAI times out or refuses (`parsed` is `None`), returns an unknown tone (A6), or the payload is malformed, the handler simply ends ([main.py:183-218](src/main.py#L183-L218)). Nothing is emitted, and the sender's bubble keeps its waiting animation with no retry. There are no acknowledgements, no error event and no `@socketio.on_error_default` handler. On a refusal, the second OpenAI call still runs.
   Fix: emit an error event carrying the message id (or use an ack callback), and let the client mark the bubble as failed or drop it. Check `message.refusal` explicitly, and skip the tone call when there's no message.
 
 - [ ] **P8. Stop using the display name as identity.** Each client decides whether a message is its own by comparing names ([chat.js:32-35](src/web/static/js/chat.js#L32-L35), [waiting.js:22](src/web/static/js/waiting.js#L22)). If both visitors type the same name, each client shows the partner's messages as its own, and the ghost-message timers get mixed up.
@@ -33,10 +30,10 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Medium
 
-- [ ] **S5. Visitors control the prompts, with developer authority.** The typed message, the name and the whole history are inserted into `developer`-role messages ([main.py:89](src/main.py#L89), [main.py:101](src/main.py#L101), [models.py:131-138](src/models.py#L131-L138)). A visitor can type instructions ("ignore the tone and say …") that the model treats as coming from the developer. A scripted client can also invent the entire conversation history.
+- [ ] **S5. Visitors control the prompts, with developer authority.** The typed message, the name and the whole history are inserted into `developer`-role messages ([main.py:120](src/main.py#L120), [main.py:132](src/main.py#L132), [models.py:133-140](src/models.py#L133-L140)). A visitor can type instructions ("ignore the tone and say …") that the model treats as coming from the developer. A scripted client can also invent the entire conversation history.
   Fix: keep the history on the server (A3). Pass visitor text as `user`-role content, or in a clearly delimited data block, and keep instructions in the `developer` message only.
 
-- [ ] **S6. The partner's browser receives the original text.** The partner is only supposed to see the rewritten text, but `response-message` sends `prompt`, the original, to the whole room ([main.py:175](src/main.py#L175)), and [sockets.js:38](src/web/static/js/sockets.js#L38) logs every payload to the console. `room` also sends both session ids to both clients ([main.py:72](src/main.py#L72)).
+- [ ] **S6. The partner's browser receives the original text.** The partner is only supposed to see the rewritten text, but `response-message` sends `prompt`, the original, to the whole room ([main.py:211](src/main.py#L211)), and [sockets.js:60](src/web/static/js/sockets.js#L60) logs every payload to the console. `room` also sends both session ids to both clients ([main.py:103](src/main.py#L103)).
   Fix: send the matching data only to the sender, or replace it with a message id (P2). Drop `sessionId` from `room`.
 
 - [ ] **P2. Replies are matched to bubbles by text.** The client finds its pending bubble with `message.content === prompt` ([chat.js:36-38](src/web/static/js/chat.js#L36-L38)). If a visitor sends the same text twice, or an earlier reply was dropped (P1) and left a pending bubble with the same text, the wrong bubble gets rewritten.
@@ -54,7 +51,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [ ] **A3. The server keeps no conversation state.** Each client keeps its own message list and sends it with every event. That single choice causes the ghost-history off-by-one (F5) and the name-based identity problem (P8), as well as S4, S5 and P3. The server already knows each room, so it can keep the last N messages per room in memory, next to the pairing state.
   Fix: store `{id, sender, text}` per room on the server, build prompts from it, and have clients send only `{clientMessageId, text, tone}`. This is the change that fixes the most problems at once.
 
-- [ ] **A6. Restrict the tone names OpenAI can return.** `ToneResponse.tone_a` and `tone_b` are plain `str` ([models.py:82-84](src/models.py#L82-L84)). A reply like `"friendly"`, or a tone that isn't in the list, raises a `KeyError` at [main.py:168](src/main.py#L168). The message is never delivered and the sender's bubble keeps its waiting animation (P1).
+- [ ] **A6. Restrict the tone names OpenAI can return.** `ToneResponse.tone_a` and `tone_b` are plain `str` ([models.py:84-86](src/models.py#L84-L86)). A reply like `"friendly"`, or a tone that isn't in the list, raises a `KeyError` at [main.py:204](src/main.py#L204). The message is never delivered and the sender's bubble keeps its waiting animation (P1).
   Fix: type both fields as a `Literal` or `Enum` built from the tone list, so structured outputs can only return valid names. A4 does this as part of merging the two calls.
 
 - [ ] **F1. The ghost timer can fire early.** [chat.js:111](src/web/static/js/chat.js#L111) compares a frame count against `this.waiting * frameRate()`, and `frameRate()` is the rate of the last frame only. At frame 1000 (about 17 s at 60 fps), a single frame at 20 fps lowers the threshold to 600, and the ghost message fires at 17 s instead of 30–45 s. `this.waiting` is also chosen once per page load ([chat.js:21](src/web/static/js/chat.js#L21)), not once per wait.
@@ -74,31 +71,31 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Low
 
-- [ ] **S7. Visitors' messages are logged and stored.** Messages are printed to stdout ([main.py:85](src/main.py#L85), [97](src/main.py#L97), [167](src/main.py#L167)) and stored by OpenAI (`store=True`, [main.py:201](src/main.py#L201)). Visitors at a public installation aren't told.
+- [ ] **S7. Visitors' messages are logged and stored.** Messages are printed to stdout ([main.py:116](src/main.py#L116), [97](src/main.py#L128), [167](src/main.py#L203)) and stored by OpenAI (`store=True`, [main.py:237](src/main.py#L237)). Visitors at a public installation aren't told.
   Fix: make a deliberate decision. Turn off `store` unless the stored completions are actually used, and log metadata rather than text.
 
-- [ ] **S9. Add a Content-Security-Policy.** S1 was fixed where it happened, but nothing stops a later `.html()` call with visitor text from running code again. All the page's scripts are same-origin files with no inline code ([index.html:64-79](src/web/templates/index.html#L64-L79)), so a `script-src 'self'` policy should fit.
+- [ ] **S9. Add a Content-Security-Policy.** S1 was fixed where it happened, but nothing stops a later `.html()` call with visitor text from running code again. All the page's scripts are same-origin files with no inline code ([index.html:68-84](src/web/templates/index.html#L68-L84)), so a `script-src 'self'` policy should fit.
   Fix: send a `Content-Security-Policy` header from Flask, and check that p5.sound still plays, since it may load its audio worklet from a `blob:` URL.
 
-- [ ] **P4. Payloads aren't validated.** `MessageInput.from_json` indexes the raw dict ([models.py:149-169](src/models.py#L149-L169)), so a missing field raises `KeyError` inside the handler. `login` is the exception: since S1 it falls back to an empty name.
+- [ ] **P4. Payloads aren't validated.** `MessageInput.from_json` indexes the raw dict ([models.py:151-171](src/models.py#L151-L171)), so a missing field raises `KeyError` inside the handler. `login` is the exception: since S1 it falls back to an empty name.
   Fix: Pydantic is already a dependency. Define inbound models for each event and reject invalid payloads with an error event.
 
 - [ ] **P5. Event names are confusing, and some fields are unused.** `logout` means "I'm leaving" from the client and "your partner left" from the server. Naming mixes `userdisconnect` with kebab-case events. `room.active` and `response-message.color` are leftovers that no client reads.
   Fix: rename the server events to `partner-left` with a `reason` (`logout` or `disconnect`), and drop the unused fields.
 
-- [ ] **P6. A dead client is detected slowly.** With the default heartbeat, a partner that dies silently is noticed after about 45 s. Until then a dead socket can hold the waiting slot, and a new visitor is "paired" with nobody before bouncing back to Waiting.
+- [ ] **P6. A dead client is detected slowly.** With the default heartbeat, a partner that dies silently is noticed after about 45 s. Until then a dead socket can hold the waiting slot, and a new visitor is "paired" with nobody before bouncing back to Waiting. If the dead installation comes back sooner, its new socket replaces the old one at once (S8).
   Fix: for two kiosks on a stable network, pass shorter values to `SocketIO(...)`, e.g. `ping_interval=5, ping_timeout=5`.
 
-- [ ] **P7. The client has no offline state.** The `disconnect` handler only logs ([sockets.js:18-20](src/web/static/js/sockets.js#L18-L20)). During an outage the chat looks alive. Messages typed then are buffered and sent after reconnect under the new session id, which isn't paired, so the server drops them.
+- [ ] **P7. The client has no offline state.** The `disconnect` handler only reacts when the server closes the socket (S8), not to a lost connection ([sockets.js:36-42](src/web/static/js/sockets.js#L36-L42)). During an outage the chat looks alive. Messages typed then are buffered and sent after reconnect under the new session id, which isn't paired, so the server drops them.
   Fix: show "reconnecting…" and disable the input while disconnected.
 
-- [ ] **A4. Two OpenAI calls per message, one after the other.** The rewrite and the tone choice run in sequence ([main.py:139-160](src/main.py#L139-L160)), which roughly doubles the time a visitor waits.
+- [ ] **A4. Two OpenAI calls per message, one after the other.** The rewrite and the tone choice run in sequence ([main.py:175-196](src/main.py#L175-L196)), which roughly doubles the time a visitor waits.
   Fix: use one structured output with `{message, tone_a, tone_b}`, with the tones typed as a `Literal` of valid names. That halves latency and calls, and fixes A6.
 
-- [ ] **A5. The tone list is defined twice.** The same names and colors live in [config.py:29-65](src/config.py#L29-L65) and [constants.js:7-48](src/web/static/js/constants.js#L7-L48), plus an unused `TONES` list in `config.py`. A change to one has to be copied to the other.
+- [ ] **A5. The tone list is defined twice.** The same names and colors live in [config.py:33-69](src/config.py#L33-L69) and [constants.js:7-48](src/web/static/js/constants.js#L7-L48), plus an unused `TONES` list in `config.py`. A change to one has to be copied to the other.
   Fix: keep one source, e.g. render it into the template or serve it as JSON.
 
-- [ ] **A7. Find out whether anything reads the Firestore color.** Every delivered message overwrites `color/color` with the sender's slider color ([`save_color`](src/main.py#L185)), but nothing in this repo reads it back.
+- [ ] **A7. Find out whether anything reads the Firestore color.** Every delivered message overwrites `color/color` with the sender's slider color ([`save_color`](src/main.py#L221)), but nothing in this repo reads it back.
   Fix: check whether anything outside the repo does. If nothing does, remove Firebase entirely.
 
 - [ ] **F2. The Home button reacts to hover, and its hit box is off-center.** `BubbleM.isPressed()` ([home.js:180-184](src/web/static/js/home.js#L180-L184)) checks only the pointer position, not whether it's pressed, so hovering is enough on a desktop. It also tests `x..x+w`, while the bubble is drawn centered on `x` (`rectMode(CENTER)`), so only its lower-right quarter responds.
@@ -114,7 +111,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [ ] **F6. Reset the ghost timer when going back to waiting.** [`Chat.exit`](src/web/static/js/chat.js#L67) clears the messages but not `count` or `isWaiting`, so a ghost message can fire soon after the next chat starts.
   Fix: reset both to their constructor values there.
 
-- [ ] **F7. Count the refresh timer in seconds, not frames.** `timerToRefresh = 60 * 60` ([main.js:11](src/web/static/js/main.js#L11)) is 3600 frames. That's about a minute at 60 fps, but longer on a slow device.
+- [ ] **F7. Count the refresh timer in seconds, not frames.** `timerToRefresh = 60 * 60` ([main.js:12](src/web/static/js/main.js#L12)) is 3600 frames. That's about a minute at 60 fps, but longer on a slow device.
   Fix: store a deadline based on `millis()` and compare against it, as in F1.
 
 - [ ] **D4. Nothing shows whether the installations are online.** There are no health checks or presence tracking. If a kiosk's browser crashes, nobody finds out until a visitor waits in vain.
@@ -127,11 +124,12 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Done
 
-- [x] **S1. A visitor's name could run code on the other installation.** The chat header was set with p5's `.html()`, so a name like `<img src=x onerror="…">` ran as script on the partner's installation. The header now uses `textContent` ([chat.js:63](src/web/static/js/chat.js#L63)), the server trims names and cuts them to 40 characters ([main.py:55-56](src/main.py#L55-L56)), and the name input has `maxlength="40"`. The client trims the name too ([loginScene.js:10](src/web/static/js/loginScene.js#L10)), because pairing compares it with the name the server returns. Fixed in `29e0bc0`.
-- [x] **S2. Debug mode could expose a Python console.** With `debug=True`, Flask-SocketIO wraps the app in Werkzeug's `DebuggedApplication(evalex=True)` in eventlet mode, which serves a PIN-protected Python console at `/console`. Debug was hard-coded on, and then followed `dever` in config.toml, which the image copies from the local checkout. Now `debug=True` is never passed ([main.py:210-212](src/main.py#L210-L212)), so there's no console in any environment. Development mode (`DEBUG=1`, [config.py:14-16](src/config.py#L14-L16)) turns on only the reloader, request logs and template reloading. The dev container sets it ([devcontainer.json](.devcontainer/devcontainer.json)), and the Docker image and Cloud Run don't, so a deploy needs no config change. The dev server stays reachable from the local network for testing with the installation devices. `/console` returns 404 with and without `DEBUG=1`. Fixed in `37d4748`.
+- [x] **S1. A visitor's name could run code on the other installation.** The chat header was set with p5's `.html()`, so a name like `<img src=x onerror="…">` ran as script on the partner's installation. The header now uses `textContent` ([chat.js:63](src/web/static/js/chat.js#L63)), the server trims names and cuts them to 40 characters ([main.py:82-83](src/main.py#L82-L83)), and the name input has `maxlength="40"`. The client trims the name too ([loginScene.js:10](src/web/static/js/loginScene.js#L10)), because pairing compares it with the name the server returns. Fixed in `29e0bc0`.
+- [x] **S2. Debug mode could expose a Python console.** With `debug=True`, Flask-SocketIO wraps the app in Werkzeug's `DebuggedApplication(evalex=True)` in eventlet mode, which serves a PIN-protected Python console at `/console`. Debug was hard-coded on, and then followed `dever` in config.toml, which the image copies from the local checkout. Now `debug=True` is never passed ([main.py:246-248](src/main.py#L246-L248)), so there's no console in any environment. Development mode (`DEBUG=1`, [config.py:18-20](src/config.py#L18-L20)) turns on only the reloader, request logs and template reloading. The dev container sets it ([devcontainer.json](.devcontainer/devcontainer.json)), and the Docker image and Cloud Run don't, so a deploy needs no config change. The dev server stays reachable from the local network for testing with the installation devices. `/console` returns 404 with and without `DEBUG=1`. Fixed in `37d4748`.
 - [x] **S3. The OpenAI key was baked into the Docker image.** The Dockerfile runs `COPY . .` with no `.dockerignore`, so `config.toml`, and the key in it, ended up in an image layer. gcloud also uploaded it to Cloud Build. [.dockerignore](src/.dockerignore) and [.gcloudignore](src/.gcloudignore) now leave out `config.toml`, `.env` and `__pycache__`. The key is read from `OPENAI_API_KEY` ([config.py:11-13](src/config.py#L11-L13)), set on Cloud Run with `--set-secrets=OPENAI_API_KEY=<secret-name>:latest`. config.toml is now optional and only for local development, and is found next to config.py, so the server starts from any directory. Images built before this fix still contain the key. Not committed yet.
+- [x] **S8. Anyone with the URL could take an installation's waiting slot.** Pairing was first come, first served, and CORS allowed any origin. Now each installation is set up once as station A or B, with the station key, on a new Setup scene ([setup.js](src/web/static/js/setup.js)). The iPads run the page as a home-screen app, which always opens at `/`, so the choice is kept in `localStorage`, and the page sends it in the Socket.IO handshake ([sockets.js:9-14](src/web/static/js/sockets.js#L9-L14)). [`on_connect`](src/main.py#L46) refuses any socket without a known station and the right `STATION_KEY`, compared in constant time, and a refused page goes back to Setup. Only station A pairs with station B ([main.py:90-92](src/main.py#L90-L92)). When a station connects again, the newest socket wins and the old one is disconnected, so a reconnecting installation replaces its stale socket at once. A replaced page goes to the new Closed scene ([closed.js](src/web/static/js/closed.js)), with buttons to take the station back or change it. It never reloads by itself: otherwise two screens set up as the same station would keep taking the connection from each other. The server doesn't start without `STATION_KEY`. CORS is back to the same-origin default, which also accepts Cloud Run's `https` origin through `X-Forwarded-Proto`. Not committed yet.
 - [x] **D3. Configuration leftovers.** `DB_ROOMS`, which nothing used, and the `dever` key it needed are gone. The key is spelled `OPENAI_API_KEY` / `openai_api_key` now. Not committed yet.
-- [x] **A1. The Firestore write blocked the server and held up delivery.** It was a synchronous gRPC call on eventlet's main thread, made before the emit. With expired credentials it froze the server for up to 60 s, long enough for both clients to time out and reconnect. Fixed in `3e9c18f`: [`save_color`](src/main.py#L185) runs after the emit, in `tpool`, with a 5 s timeout and no retry, and only logs a failure.
+- [x] **A1. The Firestore write blocked the server and held up delivery.** It was a synchronous gRPC call on eventlet's main thread, made before the emit. With expired credentials it froze the server for up to 60 s, long enough for both clients to time out and reconnect. Fixed in `3e9c18f`: [`save_color`](src/main.py#L221) runs after the emit, in `tpool`, with a 5 s timeout and no retry, and only logs a failure.
 
 Fixed in `adf4272` (fix matching):
 

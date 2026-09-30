@@ -17,7 +17,7 @@ flowchart LR
     subgraph SRV["Server: one Python process"]
         HTTP["Flask<br/>GET / and static files"]
         SIO["Flask-SocketIO, eventlet mode<br/>event handlers"]
-        PAIR[("In-memory pairing state<br/>waiting_user, partners, rooms")]
+        PAIR[("In-memory pairing state<br/>waiting_user, partners, rooms,<br/>stations, station_sessions")]
         TP["eventlet tpool<br/>real OS threads"]
         SIO --- PAIR
         SIO --> TP
@@ -34,7 +34,7 @@ flowchart LR
     FS -.-> EXT
 ```
 
-- **Two browser clients.** Each installation is a browser showing the same page. Nothing tells them apart: the server treats any browser that opens the URL as a possible installation.
+- **Two browser clients.** Each installation is an iPad running the same page as a home-screen app. It's set up once as station A or B with the shared station key, which it keeps in `localStorage`. The socket handshake carries both, and the server refuses any other socket.
 - **One server process.** Flask serves the page and static files. Flask-SocketIO, in eventlet mode, handles the socket events. All pairing state is in memory, so the server must run as a single process on a single instance.
 - **OpenAI.** Each message costs two structured-output calls: one rewrites the text, the other picks the next pair of tones for the slider.
 - **Firestore.** Only one document is used, `color/color`. It's overwritten with the sender's slider color on every delivered message. Nothing in this repo reads it back, so it may not be needed at all (A7 in [todo.md](todo.md)).
@@ -45,7 +45,7 @@ flowchart LR
 | --- | --- |
 | [main.py](src/main.py) | App setup, socket handlers, pairing state, OpenAI and Firestore calls |
 | [models.py](src/models.py) | Dataclasses for socket payloads, Pydantic models for OpenAI structured outputs |
-| [config.py](src/config.py) | Reads the OpenAI key (`OPENAI_API_KEY`, or a local `config.toml`) and `DEBUG`, defines the tone table and the tone prompt |
+| [config.py](src/config.py) | Reads the OpenAI key (`OPENAI_API_KEY`, or a local `config.toml`), the station key (`STATION_KEY`) and `DEBUG`, defines the stations, the tone table and the tone prompt |
 | [utils/json.py](src/utils/json.py) | snake_case ↔ camelCase conversion for payloads |
 
 ### Pairing state
@@ -54,19 +54,23 @@ flowchart LR
 waiting_user: Optional[User]   # the one session waiting for a partner
 partners: dict[str, User]      # session id -> the user they're talking to
 rooms: dict[str, str]          # session id -> Socket.IO room id
+stations: dict[str, str]       # session id -> station, "A" or "B"
+station_sessions: dict[str, str]  # station -> session id of the socket that holds it
 ```
 
 A session is always in one of three states:
 
 | State | Where it's recorded | Enters on | Leaves on |
 | --- | --- | --- | --- |
-| Connected | Nowhere | Socket connect | `login` |
+| Connected | `stations`, `station_sessions` | Socket connect with a known station and the right key | `login`, disconnect, or a newer socket for the same station |
 | Waiting | `waiting_user` | `login` while the slot is empty | Someone else logs in, or its own `logout`, disconnect or new `login` |
 | Paired | `partners`, `rooms`, and the Socket.IO room | `login` while someone else is waiting | Its own or its partner's `logout`, disconnect or new `login` |
 
-Rules ([on_login](src/main.py#L50-L72), [end_session](src/main.py#L115-L130)):
+Rules ([on_connect](src/main.py#L45-L63), [on_login](src/main.py#L77-L103), [end_session](src/main.py#L151-L166)):
 
-- There is one waiting slot, first come, first served.
+- A socket is only accepted with `auth: {station, key}`, where the station is `A` or `B` and the key matches `STATION_KEY`. Anything else is refused in the handshake.
+- The newest socket for a station wins. The older one is disconnected, which ends its session like any disconnect.
+- There is one waiting slot. Only the other station can take a user out of it: a login from the same station replaces the waiting user.
 - A `login` first ends whatever the session was doing. If it was paired, the partner gets `userdisconnect`.
 - Pairing creates a fresh room id (`uuid4`), puts both sockets in that Socket.IO room, and emits `room` to it.
 - `end_session` removes both sides from `partners` and `rooms`, takes both out of the room, and sends the given event (`logout` or `userdisconnect`) to the partner.
@@ -102,6 +106,8 @@ The client uses p5.js in global mode. `setup()` builds every scene once, and `dr
 | [home.js](src/web/static/js/home.js) | Home scene: floating bubbles, "touch here to connect" |
 | [loginScene.js](src/web/static/js/loginScene.js) | Name input |
 | [waiting.js](src/web/static/js/waiting.js) | Emits `login`, waits for `room` |
+| [setup.js](src/web/static/js/setup.js) | Chooses the station and takes the key, saved in `localStorage`. A `#station=…&key=…` URL overrides them |
+| [closed.js](src/web/static/js/closed.js) | Shown when a newer socket took the station. "Use this screen" reloads, "Change station" opens Setup. Never reloads by itself |
 | [chat.js](src/web/static/js/chat.js) | Conversation, pending bubbles, ghost-message timer |
 | [message.js](src/web/static/js/message.js) | Bubble layout and drawing |
 | [tone.js](src/web/static/js/tone.js) | Tone slider and the `tone` payload |
@@ -122,7 +128,15 @@ stateDiagram-v2
     Waiting --> Reload: about 1 min idle
     Chat --> Reload: X pressed, or server logout
     Reload --> Home
+    [*] --> Setup: page load, no station saved
+    Setup --> Home: server accepts the station and key
+    Home --> Setup: handshake refused
+    Home --> Closed: replaced by a newer socket
+    Closed --> Reload: Use this screen
+    Closed --> Setup: Change station
 ```
+
+Any scene can go to Setup or Closed, not only Home. Neither leaves by itself.
 
 "Reload" is `location.reload()`: the page starts over with a new socket, and the server sees the old one disconnect.
 
@@ -136,7 +150,10 @@ stateDiagram-v2
 | `room` | `onRoom(data)` | Waiting: set `recipientName`, go to Chat |
 | `userdisconnect` | `onPartnerLeft()` | Chat: go back to Waiting |
 | `response-message` | `onMessage(data)` | Chat: add or rewrite a bubble |
+| `connect` | `onConnect()` | Setup: go to Home |
 | `logout` | none | Always reloads the page |
+| `connect_error`, when the handshake was refused | none | Shows Setup, with an error |
+| `disconnect` by the server | none | Shows Closed: the station was opened on another screen |
 
 ### Chat scene
 
@@ -148,12 +165,13 @@ stateDiagram-v2
 
 ## 4. Socket protocol
 
-The client uses Socket.IO 4.6.1 and the server python-socketio 5.7.2, on the default namespace. There's no authentication, no acknowledgements and no error events. The heartbeat uses the defaults (25 s ping interval plus 20 s timeout), so a silently dead client is noticed after about 45 s.
+The client uses Socket.IO 4.6.1 and the server python-socketio 5.7.2, on the default namespace. The only authentication is the station key in the handshake. There are no acknowledgements and no error events. The heartbeat uses the defaults (25 s ping interval plus 20 s timeout), so a silently dead client is noticed after about 45 s.
 
 ### Client → server
 
 | Event | Payload | Server action |
 | --- | --- | --- |
+| connect (handshake) | `auth: {station, key}` | Refuse unless the station is `A` or `B` and the key is right. Disconnect the station's older socket, if any |
 | `login` | `{userName}` | End any current session, then take the waiting slot or pair with whoever holds it |
 | `logout` | none | End the session. The partner gets `logout` |
 | `send-message` | see below | Rewrite through OpenAI, emit `response-message` to the room |
@@ -179,7 +197,7 @@ The server rewrites the message to sound `max(tone1Value, tone2Value)`% more lik
 
 | Event | Sent to | Payload |
 | --- | --- | --- |
-| `room` | Both, via the room | `{active: true, userA: {sessionId, userName}, userB: {sessionId, userName}}`. `userA` was waiting, `userB` just logged in |
+| `room` | Both, via the room | `{active: true, userA: {sessionId, userName, station}, userB: {sessionId, userName, station}}`. `userA` was waiting, `userB` just logged in |
 | `response-message` | Both, via the room | See below |
 | `userdisconnect` | The partner | `{message: "user disconnected."}` |
 | `logout` | The partner | `{message: "user has logged out."}` |
@@ -208,7 +226,7 @@ sequenceDiagram
     A->>S: login {userName: Ana}
     Note over S: slot empty, so Ana waits
     B->>S: login {userName: Ben}
-    Note over S: slot held by Ana<br/>pair them, new room id,<br/>both sockets join the room
+    Note over S: slot held by station A<br/>pair them, new room id,<br/>both sockets join the room
     S-->>A: room {userA: Ana, userB: Ben}
     S-->>B: room {userA: Ana, userB: Ben}
     Note over A,B: both switch to the Chat scene
@@ -274,7 +292,7 @@ sequenceDiagram
         S-->>B: userdisconnect
         B->>S: login, back to Waiting
     else Ana's socket reconnects
-        Note over S: the old session disconnects,<br/>Ben gets userdisconnect as above
+        Note over S: the new socket replaces station A's old one,<br/>Ben gets userdisconnect as above
         A->>S: login with a new session id, back to Waiting
     end
 ```
@@ -294,6 +312,8 @@ sequenceDiagram
 | 9 | Nobody at the other installation | A visitor waits about a minute | The page reloads to Home. Visitors at the two installations have to arrive within about a minute of each other to meet | none (reload) |
 | 10 | Server restart | Deploy or crash | Pairing state is lost. Clients in Waiting or Chat log in again on reconnect | `login` |
 | 11 | Color output | Every delivered message | The sender's slider color is written to Firestore `color/color` | none |
+| 12 | Someone opens the URL | A phone or another browser opens the page | The Setup scene. Without the key it never connects, so there's no pairing | none |
+| 13 | A station opened twice | Both iPads are set up as station A | The one that connected last takes the station. The other shows Closed until someone presses "Use this screen" or "Change station" | `disconnect` to the first |
 
 ## 7. Flaws and risks
 
