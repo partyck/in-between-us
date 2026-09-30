@@ -34,19 +34,6 @@ textarea {
   margin: 0;
 }
 
-.logo-icon {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 1.3rem;
-  cursor: default;
-  font-family: "Michroma", sans-serif;
-  font-weight: 400;
-  font-style: normal;
-  color: #004275;
-}
-
 .unselectable {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
@@ -54,10 +41,6 @@ textarea {
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
-}
-
-.mousePointer:hover {
-  cursor: pointer;
 }
 
 /* Login Scene */

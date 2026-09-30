@@ -3,13 +3,6 @@ const HOME_TEXT_SIZE = 24;
 class Home extends Scene {
   constructor() {
     super('home-scene');
-    this.logoCovered = false;
-    this.logoIcon = select('.logo-icon');
-    this.logoIcon.mousePressed(() => {
-      if (this.clicEenable) {
-        changeScene(login);
-      }
-    });
 
     const bubblesLength = width * height * 0.0002;
     this.bubbles = [];
@@ -24,10 +17,6 @@ class Home extends Scene {
     textSize(HOME_TEXT_SIZE);
     this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
     pop();
-  }
-
-  get clicEenable() {
-    return this.logoCovered && this.m1.blurAmount <= 0;
   }
 
   draw() {
@@ -45,29 +34,9 @@ class Home extends Scene {
       bubble.display();
     }
 
-    this.bubblesCoilide();
-  }
-
-  bubblesCoilide() {
-    let { x: bX, y: bY } = this.logoIcon.position();
-    let bW = this.logoIcon.elt.offsetWidth;
-    let bH = this.logoIcon.elt.offsetHeight;
-    this.logoCovered = !this.bubbles.some((bubble) => {
-      return bubble.colides(bX - bW * 0.5, bY - bH * 0.5, bW, bH);
-    });
-
-    if (this.clicEenable) {
-      // console.log('clicEenable');
-
-      if (this.m1.isPressed()) {
-        changeScene(login);
-      }
-      let buttonHue = frameCount % 360;
-      this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
-      this.logoIcon.addClass('mousePointer');
-    } else {
-      this.logoIcon.style("text-shadow", `0px 0px 0px rgb(0 0 0 / 0%)`);
-      this.logoIcon.removeClass('mousePointer');
+    // The button only works once its text has come into focus.
+    if (this.m1.blurAmount <= 0 && this.m1.isPressed()) {
+      changeScene(login);
     }
   }
 }
@@ -129,16 +98,6 @@ class Bubble {
     drawingContext.fill();
     drawingContext.restore();
     this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
-  }
-
-  colides(buttonX, buttony, buttonWidth, buttonHeigth) {
-    // returns true if it colides with the logo
-    let closestX = constrain(this.x, buttonX, buttonX + buttonWidth);
-    let closestY = constrain(this.y, buttony, buttony + buttonHeigth);
-    let distanceX = this.x - closestX;
-    let distanceY = this.y - closestY;
-    let distanceSquared = distanceX * distanceX + distanceY * distanceY;
-    return distanceSquared < this.r * this.r;
   }
 }
 
