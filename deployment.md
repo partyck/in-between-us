@@ -1,0 +1,164 @@
+# Deployment
+
+The server runs on Cloud Run as a single instance, from the image built with [src/Dockerfile](src/Dockerfile). Both installations are browsers that open the service URL.
+
+## Configuration
+
+| Setting | Cloud Run | Local development |
+| --- | --- | --- |
+| OpenAI key | `OPENAI_API_KEY`, from Secret Manager | `openai_api_key` in `src/config.toml`, or `OPENAI_API_KEY`, which wins if both are set |
+| `DEBUG` | Never set | `1`, set by the dev container |
+| `PORT` | Set by Cloud Run | 8080 |
+| Firestore credentials | The service's service account | Your gcloud Application Default Credentials |
+
+- `DEBUG=1` turns on the reloader, request logs and template reloading. Werkzeug's interactive debugger is never used, in any environment, because in eventlet mode it serves a Python console at `/console`.
+- `src/config.toml` is gitignored. [.dockerignore](src/.dockerignore) and [.gcloudignore](src/.gcloudignore) keep it, `.env` and `__pycache__` out of the image and out of the Cloud Build upload. Keep the two files in sync.
+- With no key from either source, the server fails at startup with OpenAI's "The api_key client option must be set" error.
+
+## Values used below
+
+Run the commands from the repo root. Set these once per shell:
+
+```bash
+PROJECT_ID=<project id>
+REGION=<region, e.g. europe-west1>
+SERVICE=<Cloud Run service name>
+REPO=<Artifact Registry repository>
+IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/in-between-us
+gcloud config set project $PROJECT_ID
+SA=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')-compute@developer.gserviceaccount.com
+```
+
+`SA` is the default compute service account, which Cloud Run uses unless the service has its own. To check, run `gcloud run services describe $SERVICE --region $REGION --format='value(spec.template.spec.serviceAccountName)'`. If it prints a different account, use that one.
+
+## One-time setup
+
+1. Enable the APIs:
+
+   ```bash
+   gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
+   ```
+
+2. Create the Artifact Registry repository, unless it exists:
+
+   ```bash
+   gcloud artifacts repositories create $REPO --repository-format=docker --location=$REGION
+   ```
+
+3. Store the OpenAI key in Secret Manager, and let the service account read it. Paste the key at the prompt: it isn't echoed and stays out of the shell history. `printf '%s'` matters, because a trailing newline would become part of the key.
+
+   ```bash
+   read -rs OPENAI_KEY; printf '%s' "$OPENAI_KEY" | gcloud secrets create openai-api-key --data-file=-; unset OPENAI_KEY
+   gcloud secrets add-iam-policy-binding openai-api-key --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+   ```
+
+4. Give the service account Firestore access. The server writes the sender's slider color to `color/color` on every message. The default compute account often has Editor, which already covers this.
+
+   ```bash
+   gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SA --role=roles/datastore.user
+   ```
+
+   A failed write doesn't stop the chat. It's only logged, as `could not save color`.
+
+## Deploy
+
+1. Build the image with Cloud Build. `src` is the build context, and `.gcloudignore` decides what's uploaded. Commit first, so the tag matches the code.
+
+   ```bash
+   TAG=$(git rev-parse --short HEAD)
+   gcloud builds submit src --tag $IMAGE:$TAG
+   ```
+
+2. Deploy it:
+
+   ```bash
+   gcloud run deploy $SERVICE --image $IMAGE:$TAG --region $REGION \
+     --allow-unauthenticated \
+     --max-instances=1 \
+     --timeout=3600 \
+     --set-secrets=OPENAI_API_KEY=openai-api-key:latest
+   ```
+
+   Cloud Run keeps these settings on the service, so once they're set, later deploys only need `--image` and `--region`. Never add `DEBUG` to the service's environment variables.
+
+   | Flag | Why |
+   | --- | --- |
+   | `--allow-unauthenticated` | The installations open the URL without signing in. |
+   | `--max-instances=1` | Pairing state is in memory. A second instance has its own waiting slot and can leave the installations unable to reach each other (D5 in [todo.md](todo.md)). |
+   | `--timeout=3600` | Cloud Run closes WebSockets at the request timeout, 5 minutes by default, which clears the chat. 60 minutes is the maximum (D2). |
+   | `--set-secrets` | Sets `OPENAI_API_KEY` from Secret Manager. `latest` is read when an instance starts. |
+
+3. Check it:
+
+   ```bash
+   URL=$(gcloud run services describe $SERVICE --region $REGION --format='value(status.url)')
+   curl -s -o /dev/null -w "%{http_code}\n" $URL/          # 200
+   curl -s -o /dev/null -w "%{http_code}\n" $URL/console   # 404: no debugger
+   ```
+
+   Then reload both installation pages and check that they pair. Pairing state lives in memory, so a deploy ends any chat in progress.
+
+If the new revision fails to start, for example because the secret is missing or the service account can't read it, Cloud Run keeps serving the previous revision. The error is in the service's logs.
+
+## Rotating the OpenAI key
+
+1. Create a new key in the OpenAI dashboard, and add it as a new secret version:
+
+   ```bash
+   read -rs OPENAI_KEY; printf '%s' "$OPENAI_KEY" | gcloud secrets versions add openai-api-key --data-file=-; unset OPENAI_KEY
+   ```
+
+2. Start a new revision, which reads the new version:
+
+   ```bash
+   gcloud run services update $SERVICE --region $REGION --update-secrets=OPENAI_API_KEY=openai-api-key:latest
+   ```
+
+3. Once messages go through, revoke the old key in the OpenAI dashboard, and disable the old version:
+
+   ```bash
+   gcloud secrets versions list openai-api-key
+   gcloud secrets versions disable <old version> --secret=openai-api-key
+   ```
+
+## Cleaning up after the S3 fix (one time)
+
+Until S3 was fixed, `config.toml` was copied into every image, and `gcloud builds submit` uploaded it to Cloud Build. Anyone who can pull those images or read that bucket can read the key.
+
+1. Rotate the key, as above. This is the step that matters: it makes the old copies useless.
+2. Once the new revision is serving, delete the old images, wherever they were pushed. For Artifact Registry:
+
+   ```bash
+   gcloud artifacts docker images list $IMAGE --include-tags
+   gcloud artifacts docker images delete $IMAGE@<digest> --delete-tags
+   ```
+
+3. Delete the old Cloud Build source archives:
+
+   ```bash
+   gcloud storage ls gs://${PROJECT_ID}_cloudbuild/source/
+   gcloud storage rm "gs://${PROJECT_ID}_cloudbuild/source/*"
+   ```
+
+Revisions that used the deleted images can't be rolled back to afterwards. They would use the revoked key anyway.
+
+## Local development
+
+- The dev container sets `DEBUG=1` in [devcontainer.json](.devcontainer/devcontainer.json). Rebuild the container after changing it.
+- Put the key in `src/config.toml`:
+
+  ```toml
+  openai_api_key = "sk-..."
+  ```
+
+- Firestore uses your Application Default Credentials (`gcloud auth application-default login`). The dev container links `~/.config/gcloud` to `~/.devcontainer-shared/gcloud-config` on the host, so the login survives rebuilds. When the credentials expire, color writes fail and are logged.
+- Start the server with `python3 src/main.py`, from any directory. Port 8080 is published on all of your machine's network interfaces, so the installation devices can open `http://<your machine's IP>:8080` on the same network.
+
+## Not handled yet
+
+These are open in [todo.md](todo.md):
+
+- **D1:** the image is built on the dev container image, runs as root, and installs packages nothing uses.
+- **D4:** there's no health check, so nobody notices when a kiosk's browser crashes.
+- **S8:** anyone with the URL can take an installation's waiting slot.
+- **S4:** OpenAI spend has no limit. Until it does, set a budget limit on the OpenAI project.

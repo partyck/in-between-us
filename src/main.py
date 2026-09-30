@@ -9,7 +9,7 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room
 from openai import OpenAI
 
-from config import DEBUG, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from config import DEBUG, OPENAI_API_KEY, TONES_BY_NAME, TONES_PROMPT
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
 
 # DB initialize
@@ -21,7 +21,7 @@ app.config["TEMPLATES_AUTO_RELOAD"] = DEBUG
 
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
-client = OpenAI(api_key=OPENIA_API_KEY, timeout=20, max_retries=1)
+client = OpenAI(api_key=OPENAI_API_KEY, timeout=20, max_retries=1)
 
 # PAIRING
 # Only the two installations talk to each other, so pairing lives in memory instead of the DB.
@@ -197,7 +197,8 @@ def parse_completion(messages: list, response_format):
     completion = tpool.execute(
         client.beta.chat.completions.parse,
         # model="gpt-4o-mini",
-        model="gpt-4o-2024-08-06",
+        # model="gpt-4o-2024-08-06",
+        model="gpt-6.1-sol",
         store=True,
         messages=messages,
         response_format=response_format,

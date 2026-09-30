@@ -1,0 +1,7 @@
+# Keep secrets and local files out of the image. The OpenAI key comes from OPENAI_API_KEY at runtime.
+# Keep in sync with .gcloudignore.
+config.toml
+.env
+**/__pycache__
+**/*.pyc
+**/.DS_Store

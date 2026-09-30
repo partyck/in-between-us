@@ -1,0 +1,8 @@
+# Files that gcloud builds submit and gcloud run deploy --source don't upload to Cloud Build.
+# Keep in sync with .dockerignore.
+.gcloudignore
+config.toml
+.env
+__pycache__/
+*.pyc
+.DS_Store

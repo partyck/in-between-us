@@ -10,15 +10,11 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Where to start
 
-1. **S3.** A small change that closes a real exposure.
-2. **S8 plus S4.** Station pairing and server-side limits together close the public door and cap the cost.
-3. **A3, server-side history with message ids.** One change that fixes P2, P3, P8, S5 and F5.
-4. **P1, an error path.** Visitors stop seeing messages that never arrive.
+1. **S8 plus S4.** Station pairing and server-side limits together close the public door and cap the cost.
+2. **A3, server-side history with message ids.** One change that fixes P2, P3, P8, S5 and F5.
+3. **P1, an error path.** Visitors stop seeing messages that never arrive.
 
 ## High
-
-- [ ] **S3. The OpenAI key is baked into the Docker image.** [src/Dockerfile](src/Dockerfile#L8) runs `COPY . .` and there's no `.dockerignore`, so `config.toml` (and `__pycache__`) end up in an image layer. Anyone who can pull the image can read the key. The file is also loaded from a path relative to the working directory ([config.py:5](src/config.py#L5)), so the server only starts from `src/`.
-  Fix: add a `.dockerignore`. Read the key from the `OPENAI_API_KEY` environment variable, which the SDK picks up by default. On Cloud Run, set it from Secret Manager with `--set-secrets=OPENAI_API_KEY=<secret-name>:latest`.
 
 - [ ] **S4. OpenAI spend has no limit.** The server doesn't limit event rate, message length or history length (names are capped since S1). Every `send-message` or `send-ghost-message` costs two GPT-4o calls with whatever history the client sends. A script can open two sockets, pair them with each other, and loop `send-ghost-message` with a large fake history.
   Fix: enforce limits on the server: maximum message length, a cap on history items and total size, one request in flight per session, and a minimum interval between events. Set a budget limit on the OpenAI project. S8 closes the rest.
@@ -99,7 +95,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [ ] **A4. Two OpenAI calls per message, one after the other.** The rewrite and the tone choice run in sequence ([main.py:139-160](src/main.py#L139-L160)), which roughly doubles the time a visitor waits.
   Fix: use one structured output with `{message, tone_a, tone_b}`, with the tones typed as a `Literal` of valid names. That halves latency and calls, and fixes A6.
 
-- [ ] **A5. The tone list is defined twice.** The same names and colors live in [config.py:25-61](src/config.py#L25-L61) and [constants.js:7-48](src/web/static/js/constants.js#L7-L48), plus an unused `TONES` list in `config.py`. A change to one has to be copied to the other.
+- [ ] **A5. The tone list is defined twice.** The same names and colors live in [config.py:29-65](src/config.py#L29-L65) and [constants.js:7-48](src/web/static/js/constants.js#L7-L48), plus an unused `TONES` list in `config.py`. A change to one has to be copied to the other.
   Fix: keep one source, e.g. render it into the template or serve it as JSON.
 
 - [ ] **A7. Find out whether anything reads the Firestore color.** Every delivered message overwrites `color/color` with the sender's slider color ([`save_color`](src/main.py#L185)), but nothing in this repo reads it back.
@@ -121,9 +117,6 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [ ] **F7. Count the refresh timer in seconds, not frames.** `timerToRefresh = 60 * 60` ([main.js:11](src/web/static/js/main.js#L11)) is 3600 frames. That's about a minute at 60 fps, but longer on a slow device.
   Fix: store a deadline based on `millis()` and compare against it, as in F1.
 
-- [ ] **D3. Configuration leftovers.** [config.py:11](src/config.py#L11) requires a `dever` key for `DB_ROOMS`, which nothing uses, so the server fails to start without it. `OPENIA_API_KEY` is a typo.
-  Fix: delete `DB_ROOMS` and the `dever` key. Fixing S3 replaces the misspelled key.
-
 - [ ] **D4. Nothing shows whether the installations are online.** There are no health checks or presence tracking. If a kiosk's browser crashes, nobody finds out until a visitor waits in vain.
   Fix: add a `/health` endpoint, and log or expose how many sockets are connected.
 
@@ -134,8 +127,10 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 ## Done
 
-- [x] **S1. A visitor's name could run code on the other installation.** The chat header was set with p5's `.html()`, so a name like `<img src=x onerror="…">` ran as script on the partner's installation. The header now uses `textContent` ([chat.js:63](src/web/static/js/chat.js#L63)), the server trims names and cuts them to 40 characters ([main.py:55-56](src/main.py#L55-L56)), and the name input has `maxlength="40"`. The client trims the name too ([loginScene.js:10](src/web/static/js/loginScene.js#L10)), because pairing compares it with the name the server returns. Not committed yet.
-- [x] **S2. Debug mode could expose a Python console.** With `debug=True`, Flask-SocketIO wraps the app in Werkzeug's `DebuggedApplication(evalex=True)` in eventlet mode, which serves a PIN-protected Python console at `/console`. Debug was hard-coded on, and then followed `dever` in config.toml, which the image copies from the local checkout. Now `debug=True` is never passed ([main.py:210-212](src/main.py#L210-L212)), so there's no console in any environment. Development mode (`DEBUG=1`, [config.py:12-14](src/config.py#L12-L14)) turns on only the reloader, request logs and template reloading. The dev container sets it ([devcontainer.json](.devcontainer/devcontainer.json)), and the Docker image and Cloud Run don't, so a deploy needs no config change. The dev server stays reachable from the local network for testing with the installation devices. `/console` returns 404 with and without `DEBUG=1`. Not committed yet.
+- [x] **S1. A visitor's name could run code on the other installation.** The chat header was set with p5's `.html()`, so a name like `<img src=x onerror="…">` ran as script on the partner's installation. The header now uses `textContent` ([chat.js:63](src/web/static/js/chat.js#L63)), the server trims names and cuts them to 40 characters ([main.py:55-56](src/main.py#L55-L56)), and the name input has `maxlength="40"`. The client trims the name too ([loginScene.js:10](src/web/static/js/loginScene.js#L10)), because pairing compares it with the name the server returns. Fixed in `29e0bc0`.
+- [x] **S2. Debug mode could expose a Python console.** With `debug=True`, Flask-SocketIO wraps the app in Werkzeug's `DebuggedApplication(evalex=True)` in eventlet mode, which serves a PIN-protected Python console at `/console`. Debug was hard-coded on, and then followed `dever` in config.toml, which the image copies from the local checkout. Now `debug=True` is never passed ([main.py:210-212](src/main.py#L210-L212)), so there's no console in any environment. Development mode (`DEBUG=1`, [config.py:14-16](src/config.py#L14-L16)) turns on only the reloader, request logs and template reloading. The dev container sets it ([devcontainer.json](.devcontainer/devcontainer.json)), and the Docker image and Cloud Run don't, so a deploy needs no config change. The dev server stays reachable from the local network for testing with the installation devices. `/console` returns 404 with and without `DEBUG=1`. Fixed in `37d4748`.
+- [x] **S3. The OpenAI key was baked into the Docker image.** The Dockerfile runs `COPY . .` with no `.dockerignore`, so `config.toml`, and the key in it, ended up in an image layer. gcloud also uploaded it to Cloud Build. [.dockerignore](src/.dockerignore) and [.gcloudignore](src/.gcloudignore) now leave out `config.toml`, `.env` and `__pycache__`. The key is read from `OPENAI_API_KEY` ([config.py:11-13](src/config.py#L11-L13)), set on Cloud Run with `--set-secrets=OPENAI_API_KEY=<secret-name>:latest`. config.toml is now optional and only for local development, and is found next to config.py, so the server starts from any directory. Images built before this fix still contain the key. Not committed yet.
+- [x] **D3. Configuration leftovers.** `DB_ROOMS`, which nothing used, and the `dever` key it needed are gone. The key is spelled `OPENAI_API_KEY` / `openai_api_key` now. Not committed yet.
 - [x] **A1. The Firestore write blocked the server and held up delivery.** It was a synchronous gRPC call on eventlet's main thread, made before the emit. With expired credentials it froze the server for up to 60 s, long enough for both clients to time out and reconnect. Fixed in `3e9c18f`: [`save_color`](src/main.py#L185) runs after the emit, in `tpool`, with a 5 s timeout and no retry, and only logs a failure.
 
 Fixed in `adf4272` (fix matching):

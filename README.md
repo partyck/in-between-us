@@ -32,10 +32,11 @@ The client moves through four scenes ([scene.js](src/web/static/js/scene.js), sw
 ## Server notes
 
 - **Pairing state lives in memory** (`waiting_user`, `partners` and `rooms` in [main.py](src/main.py)). With only two installations there's nothing to share, and a restart just clears the state; clients log in again when they reconnect. Firestore only stores the current `color` document.
-- **Run exactly one server process and one instance.** A second instance keeps its own pairing state and can leave the two installations unable to reach each other. If the host autoscales (e.g. Cloud Run), set max instances to 1.
+- **Run exactly one server process and one instance.** A second instance keeps its own pairing state and can leave the two installations unable to reach each other. On Cloud Run, deploy with `--max-instances=1` (see [deployment.md](deployment.md)).
 - **OpenAI and Firestore calls run in `eventlet.tpool`.** The server runs in eventlet mode without monkey-patching, so a blocking call on the main thread would freeze every client. Don't add `eventlet.monkey_patch()`: it's known to break the gRPC library Firestore uses. OpenAI calls time out after 20 s and retry once. The Firestore color write happens after the message is sent, times out after 5 s with no retry, and a failure is only logged.
 - A reply is dropped if the sender is no longer paired, or is paired with someone else, by the time OpenAI answers.
 - **Development mode is on only when `DEBUG=1`.** It restarts the server on code changes, logs requests and reloads templates. The dev container sets it, and the Docker image doesn't, so don't set it on Cloud Run. Werkzeug's interactive debugger is never used, because in eventlet mode it serves a Python console at `/console`.
+- **The OpenAI key comes from `OPENAI_API_KEY`**, set from Secret Manager on Cloud Run. For local development it can go in `src/config.toml` as `openai_api_key` instead. That file never goes into the image. See [deployment.md](deployment.md) for building, deploying and rotating the key.
 - **The dev server is reachable from the local network** at `http://<your machine's IP>:8080`, so the installation devices can be tested against it.
 
 ## Known limitations

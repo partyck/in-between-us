@@ -2,7 +2,7 @@
 
 In Between Us connects two installations. A visitor at each one types a name, is paired with the visitor at the other installation, and they chat. Every message goes through OpenAI and is rewritten in the tone the sender picked on a slider before either side sees it. If a visitor stays silent, the AI writes a message on their behalf.
 
-This document describes the code as of `c0b53ca` plus the uncommitted scene refactor ([scene.js](src/web/static/js/scene.js)). Line links will drift as the code changes. The [README](README.md) has a shorter summary, and [todo.md](todo.md) tracks open work.
+This document describes the code as of `c0b53ca` plus the uncommitted scene refactor ([scene.js](src/web/static/js/scene.js)). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
 
 ## 1. System overview
 
@@ -45,7 +45,7 @@ flowchart LR
 | --- | --- |
 | [main.py](src/main.py) | App setup, socket handlers, pairing state, OpenAI and Firestore calls |
 | [models.py](src/models.py) | Dataclasses for socket payloads, Pydantic models for OpenAI structured outputs |
-| [config.py](src/config.py) | Reads `config.toml` (API key), defines the tone table and the tone prompt |
+| [config.py](src/config.py) | Reads the OpenAI key (`OPENAI_API_KEY`, or a local `config.toml`) and `DEBUG`, defines the tone table and the tone prompt |
 | [utils/json.py](src/utils/json.py) | snake_case ↔ camelCase conversion for payloads |
 
 ### Pairing state
