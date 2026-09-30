@@ -1,3 +1,4 @@
+import os
 import tomllib
 
 from models import ToneOptions
@@ -8,8 +9,9 @@ with open("config.toml", mode="rb") as fp:
 # openIA
 OPENIA_API_KEY: str = config["openia_api_key"]
 DB_ROOMS: str = "rooms-" + config["dever"]
-# Debug mode runs the reloader and Werkzeug's interactive console, so only turn it on in development.
-DEBUG: bool = config["dever"] == "dev"
+# Development mode: restart on code changes, log requests and reload templates. Off unless DEBUG=1.
+# Only the dev container sets it. The Docker image and Cloud Run never do.
+DEBUG: bool = os.environ.get("DEBUG") == "1"
 
 TONES = [
     ("Friendly", "Hostile"),

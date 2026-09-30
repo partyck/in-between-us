@@ -65,7 +65,8 @@
 	"remoteUser": "vscode",
 	"containerEnv": {
 		"CONTAINER_WORKSPACE_FOLDER": "${containerWorkspaceFolder}",
-		"PYTHONPATH": "."
+		"PYTHONPATH": ".",
+		"DEBUG": "1"
 	},
 	"mounts": [
 		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.devcontainer-shared/gcloud-config,target=/home/vscode/.devcontainer-shared/gcloud-config,type=bind"

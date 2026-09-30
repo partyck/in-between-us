@@ -17,6 +17,7 @@ initialize_app()
 db = firestore.client()
 
 app = Flask(__name__, static_url_path="", static_folder="web/static", template_folder="web/templates")
+app.config["TEMPLATES_AUTO_RELOAD"] = DEBUG
 
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
@@ -206,4 +207,6 @@ def parse_completion(messages: list, response_format):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    socketio.run(app, debug=DEBUG, port=port, host="0.0.0.0")
+    # Never debug=True: in eventlet mode it adds Werkzeug's interactive console, which would be
+    # reachable from the local network in development.
+    socketio.run(app, port=port, host="0.0.0.0", use_reloader=DEBUG, log_output=DEBUG)
