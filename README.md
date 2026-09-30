@@ -35,8 +35,9 @@ The client moves through four scenes ([scene.js](src/web/static/js/scene.js), sw
 - **Run exactly one server process and one instance.** A second instance keeps its own pairing state and can leave the two installations unable to reach each other. If the host autoscales (e.g. Cloud Run), set max instances to 1.
 - **OpenAI and Firestore calls run in `eventlet.tpool`.** The server runs in eventlet mode without monkey-patching, so a blocking call on the main thread would freeze every client. Don't add `eventlet.monkey_patch()`: it's known to break the gRPC library Firestore uses. OpenAI calls time out after 20 s and retry once. The Firestore color write happens after the message is sent, times out after 5 s with no retry, and a failure is only logged.
 - A reply is dropped if the sender is no longer paired, or is paired with someone else, by the time OpenAI answers.
+- **Development mode is on only when `DEBUG=1`.** It restarts the server on code changes, logs requests and reloads templates. The dev container sets it, and the Docker image doesn't, so don't set it on Cloud Run. Werkzeug's interactive debugger is never used, because in eventlet mode it serves a Python console at `/console`.
+- **The dev server is reachable from the local network** at `http://<your machine's IP>:8080`, so the installation devices can be tested against it.
 
 ## Known limitations
 
-- Anyone who opens the URL can be paired, not only the two installations.
-- Each client identifies its own messages by display name, so two visitors with the same name confuse the chat.
+Open problems and their planned fixes are tracked in [todo.md](todo.md).
