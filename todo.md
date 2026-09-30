@@ -74,7 +74,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [ ] **S7. Visitors' messages are logged and stored.** Messages are printed to stdout ([main.py:116](src/main.py#L116), [97](src/main.py#L128), [167](src/main.py#L203)) and stored by OpenAI (`store=True`, [main.py:237](src/main.py#L237)). Visitors at a public installation aren't told.
   Fix: make a deliberate decision. Turn off `store` unless the stored completions are actually used, and log metadata rather than text.
 
-- [ ] **S9. Add a Content-Security-Policy.** S1 was fixed where it happened, but nothing stops a later `.html()` call with visitor text from running code again. All the page's scripts are same-origin files with no inline code ([index.html:68-84](src/web/templates/index.html#L68-L84)), so a `script-src 'self'` policy should fit.
+- [ ] **S9. Add a Content-Security-Policy.** S1 was fixed where it happened, but nothing stops a later `.html()` call with visitor text from running code again. All the page's scripts are same-origin files with no inline code ([index.html:86-103](src/web/templates/index.html#L86-L103)), so a `script-src 'self'` policy should fit.
   Fix: send a `Content-Security-Policy` header from Flask, and check that p5.sound still plays, since it may load its audio worklet from a `blob:` URL.
 
 - [ ] **P4. Payloads aren't validated.** `MessageInput.from_json` indexes the raw dict ([models.py:151-171](src/models.py#L151-L171)), so a missing field raises `KeyError` inside the handler. `login` is the exception: since S1 it falls back to an empty name.
@@ -97,9 +97,6 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 
 - [ ] **A7. Find out whether anything reads the Firestore color.** Every delivered message overwrites `color/color` with the sender's slider color ([`save_color`](src/main.py#L221)), but nothing in this repo reads it back.
   Fix: check whether anything outside the repo does. If nothing does, remove Firebase entirely.
-
-- [ ] **F2. The Home button reacts to hover, and its hit box is off-center.** `BubbleM.isPressed()` ([home.js:180-184](src/web/static/js/home.js#L180-L184)) checks only the pointer position, not whether it's pressed, so hovering is enough on a desktop. It also tests `x..x+w`, while the bubble is drawn centered on `x` (`rectMode(CENTER)`), so only its lower-right quarter responds.
-  Fix: test `x ± w/2`, `y ± h/2`, and only in `mousePressed`/`touchStarted`.
 
 - [ ] **F3. Small fixes.**
   - The slider starts with its labels swapped relative to its colors: "Formal" on the left in Informal's green ([tone.js:5-8](src/web/static/js/tone.js#L5-L8)).
@@ -130,6 +127,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
 - [x] **S8. Anyone with the URL could take an installation's waiting slot.** Pairing was first come, first served, and CORS allowed any origin. Now each installation is set up once as station A or B, with the station key, on a new Setup scene ([setup.js](src/web/static/js/setup.js)). The iPads run the page as a home-screen app, which always opens at `/`, so the choice is kept in `localStorage`, and the page sends it in the Socket.IO handshake ([sockets.js:9-14](src/web/static/js/sockets.js#L9-L14)). [`on_connect`](src/main.py#L46) refuses any socket without a known station and the right `STATION_KEY`, compared in constant time, and a refused page goes back to Setup. Only station A pairs with station B ([main.py:90-92](src/main.py#L90-L92)). When a station connects again, the newest socket wins and the old one is disconnected, so a reconnecting installation replaces its stale socket at once. A replaced page goes to the new Closed scene ([closed.js](src/web/static/js/closed.js)), with buttons to take the station back or change it. It never reloads by itself: otherwise two screens set up as the same station would keep taking the connection from each other. The server doesn't start without `STATION_KEY`. CORS is back to the same-origin default, which also accepts Cloud Run's `https` origin through `X-Forwarded-Proto`. Not committed yet.
 - [x] **D3. Configuration leftovers.** `DB_ROOMS`, which nothing used, and the `dever` key it needed are gone. The key is spelled `OPENAI_API_KEY` / `openai_api_key` now. Not committed yet.
 - [x] **A1. The Firestore write blocked the server and held up delivery.** It was a synchronous gRPC call on eventlet's main thread, made before the emit. With expired credentials it froze the server for up to 60 s, long enough for both clients to time out and reconnect. Fixed in `3e9c18f`: [`save_color`](src/main.py#L221) runs after the emit, in `tpool`, with a 5 s timeout and no retry, and only logs a failure.
+- [x] **F2. The Home button's hit box was off-center.** It tested `x..x+w`, while the button is drawn centered on `x` (`rectMode(CENTER)`), so only its lower-right quarter responded. `BubbleM.isHovered()` ([home.js:146](src/web/static/js/home.js#L146)) now tests `x ± w/2`, `y ± h/2`. Hovering still opens Login once the text is in focus, on purpose. Not committed yet. Before that, `fb1c62f` removed the hidden "In between us." logo: its "no bubble covers the logo" check measured a 0×0 box at the top-left corner, so the button only worked while no bubble was there.
 
 Fixed in `adf4272` (fix matching):
 
