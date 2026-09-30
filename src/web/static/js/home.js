@@ -35,6 +35,7 @@ class Home extends Scene {
     rectMode(CENTER);
     background(c.bgColor);
 
+    this.m1.move();
     this.m1.display();
     this.m1.update();
 
@@ -169,6 +170,12 @@ class BubbleM {
     drawingContext.filter = `blur(${this.blurAmount * 10}px)`;
     text(this.content, this.x - textWidth(this.content) / 2, this.y + 6);
     drawingContext.filter = 'none';
+  }
+
+  move() {
+    // Same random walk as Bubble.move, but the margin is half the button so it never slides off screen.
+    this.y = constrain(this.y + random(-1, 1), this.h * 0.5, height - this.h * 0.5);
+    this.x = constrain(this.x + random(-1, 1), this.w * 0.5, width - this.w * 0.5);
   }
 
   update() {
