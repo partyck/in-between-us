@@ -10,17 +10,19 @@ from utils.json import dict_to_json_convention
 class User:
     session_id: str
     user_name: str
+    station: str
 
-    def __init__(self, session_id: str, user_name: str) -> None:
+    def __init__(self, session_id: str, user_name: str, station: str) -> None:
         self.session_id = session_id
         self.user_name = user_name
+        self.station = station
 
     def to_json(self):
         return dict_to_json_convention(asdict(self))
 
     @classmethod
     def from_json(cls, data: dict) -> Self:
-        return cls(session_id=data["sessionId"], user_name=data["userName"])
+        return cls(session_id=data["sessionId"], user_name=data["userName"], station=data["station"])
 
 
 @dataclass

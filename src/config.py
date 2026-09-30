@@ -11,6 +11,11 @@ config = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.e
 # On Cloud Run the key comes from Secret Manager as OPENAI_API_KEY.
 # Locally it can also be set in config.toml. With neither, the OpenAI client fails at startup.
 OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY") or config.get("openai_api_key")
+# Only the two installations may connect. Each is set up once as station A or B with the station key (setup.js), and
+# the server rejects any other socket. The key comes from Secret Manager as STATION_KEY on Cloud Run, or from
+# config.toml locally.
+STATIONS = ("A", "B")
+STATION_KEY: str | None = os.environ.get("STATION_KEY") or config.get("station_key")
 # Development mode: restart on code changes, log requests and reload templates. Off unless DEBUG=1.
 # Only the dev container sets it. The Docker image and Cloud Run never do.
 DEBUG: bool = os.environ.get("DEBUG") == "1"

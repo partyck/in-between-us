@@ -1,3 +1,4 @@
+import hmac
 import os
 import threading
 import uuid
@@ -6,11 +7,14 @@ from typing import Optional
 from eventlet import tpool
 from firebase_admin import firestore, initialize_app
 from flask import Flask, render_template, request
-from flask_socketio import SocketIO, join_room, leave_room
+from flask_socketio import SocketIO, disconnect, join_room, leave_room
 from openai import OpenAI
 
-from config import DEBUG, OPENAI_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from config import DEBUG, OPENAI_API_KEY, STATION_KEY, STATIONS, TONES_BY_NAME, TONES_PROMPT
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
+
+if not STATION_KEY:
+    raise RuntimeError("STATION_KEY is not set, so no installation could connect. See deployment.md.")
 
 # DB initialize
 initialize_app()
@@ -20,7 +24,8 @@ app = Flask(__name__, static_url_path="", static_folder="web/static", template_f
 app.config["TEMPLATES_AUTO_RELOAD"] = DEBUG
 
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+# Without cors_allowed_origins, only pages served by this server can open a socket.
+socketio = SocketIO(app, async_mode="eventlet")
 client = OpenAI(api_key=OPENAI_API_KEY, timeout=20, max_retries=1)
 
 # PAIRING
@@ -30,20 +35,42 @@ pairing_lock = threading.Lock()
 waiting_user: Optional[User] = None
 partners: dict[str, User] = {}  # session id -> the user they are talking to
 rooms: dict[str, str] = {}  # session id -> room id
+stations: dict[str, str] = {}  # session id -> station
+station_sessions: dict[str, str] = {}  # station -> session id of the socket that holds it
 
 MAX_NAME_LENGTH = 40  # keep in sync with maxlength on #name-input
 
 
 # SOCKETS
 @socketio.on("connect")
-def on_connect():
-    print("on_connect", request.sid)  # type: ignore
+def on_connect(auth):
+    session_id = request.sid  # type: ignore
+    station = auth.get("station") if isinstance(auth, dict) else None
+    key = auth.get("key") if isinstance(auth, dict) else None
+    if station not in STATIONS or not is_station_key(key):
+        print("on_connect rejected", session_id)
+        return False
+
+    with pairing_lock:
+        replaced = station_sessions.get(station)
+        station_sessions[station] = session_id
+        stations[session_id] = station
+    print("on_connect", session_id, "station", station)
+
+    # The newest socket wins. A reloaded or reconnected installation gets a new session id, and its old socket
+    # may not have timed out yet. The old socket's disconnect ends its session, outside the lock.
+    if replaced:
+        disconnect(replaced)
 
 
 @socketio.on("disconnect")
 def on_disconnect():
     session_id = request.sid  # type: ignore
     print("on_disconnect", session_id)
+    with pairing_lock:
+        station = stations.pop(session_id, None)
+        if station and station_sessions.get(station) == session_id:
+            del station_sessions[station]
     end_session(session_id, "userdisconnect", "user disconnected.")
 
 
@@ -54,11 +81,15 @@ def on_login(data):
     print("on login!", session_id)
     raw_name = data.get("userName") if isinstance(data, dict) else None
     user_name = raw_name.strip()[:MAX_NAME_LENGTH] if isinstance(raw_name, str) else ""
-    user = User(session_id=session_id, user_name=user_name)
+    station = stations.get(session_id)
+    if not station:  # replaced by a newer socket for the same station
+        return
+    user = User(session_id=session_id, user_name=user_name, station=station)
     end_session(session_id, "userdisconnect", "user disconnected.")
 
     with pairing_lock:
-        partner = waiting_user if waiting_user and waiting_user.session_id != session_id else None
+        # Only the other station can be a partner.
+        partner = waiting_user if waiting_user and waiting_user.station != station else None
         if not partner:
             waiting_user = user
             return
@@ -112,6 +143,11 @@ def route_home():
 
 
 # HELPERS
+def is_station_key(key) -> bool:
+    # compare_digest takes the same time wherever the strings differ, so the key can't be guessed from timings.
+    return isinstance(key, str) and hmac.compare_digest(key.encode(), STATION_KEY.encode())  # type: ignore
+
+
 def end_session(session_id: str, event: str, message: str):
     """Takes the user out of the waiting slot or their room, and sends `event` to their partner."""
     global waiting_user
