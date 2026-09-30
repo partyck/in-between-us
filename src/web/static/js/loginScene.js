@@ -6,8 +6,10 @@ class LoginScene extends Scene {
     this.submitButton = select('.login-button');
 
     this.submitButton.mousePressed(() => {
-      if (inputE.value()) {
-        userName = inputE.value();
+      // Trimmed the same way as on the server, which pairing compares names against.
+      let name = inputE.value().trim();
+      if (name) {
+        userName = name;
         inputE.value('');
         waiting.join();
       }

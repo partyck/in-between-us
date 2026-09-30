@@ -60,7 +60,7 @@ class Chat extends Scene {
 
   enter() {
     super.enter();
-    this.recipientNameE.html(`You are talking to ${recipientName}`);
+    this.recipientNameE.elt.textContent = `You are talking to ${recipientName}`;
     this.toneController.setToneValue();
   }
 

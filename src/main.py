@@ -30,6 +30,8 @@ waiting_user: Optional[User] = None
 partners: dict[str, User] = {}  # session id -> the user they are talking to
 rooms: dict[str, str] = {}  # session id -> room id
 
+MAX_NAME_LENGTH = 40  # keep in sync with maxlength on #name-input
+
 
 # SOCKETS
 @socketio.on("connect")
@@ -49,7 +51,8 @@ def on_login(data):
     global waiting_user
     session_id = request.sid  # type: ignore
     print("on login!", session_id)
-    user_name = data["userName"] if isinstance(data, dict) else ""
+    raw_name = data.get("userName") if isinstance(data, dict) else None
+    user_name = raw_name.strip()[:MAX_NAME_LENGTH] if isinstance(raw_name, str) else ""
     user = User(session_id=session_id, user_name=user_name)
     end_session(session_id, "userdisconnect", "user disconnected.")
 
