@@ -9,7 +9,7 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, join_room, leave_room
 from openai import OpenAI
 
-from config import OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
+from config import DEBUG, OPENIA_API_KEY, TONES_BY_NAME, TONES_PROMPT
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
 
 # DB initialize
@@ -203,4 +203,4 @@ def parse_completion(messages: list, response_format):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    socketio.run(app, debug=True, port=port, host="0.0.0.0")
+    socketio.run(app, debug=DEBUG, port=port, host="0.0.0.0")

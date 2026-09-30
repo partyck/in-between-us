@@ -8,6 +8,8 @@ with open("config.toml", mode="rb") as fp:
 # openIA
 OPENIA_API_KEY: str = config["openia_api_key"]
 DB_ROOMS: str = "rooms-" + config["dever"]
+# Debug mode runs the reloader and Werkzeug's interactive console, so only turn it on in development.
+DEBUG: bool = config["dever"] == "dev"
 
 TONES = [
     ("Friendly", "Hostile"),
