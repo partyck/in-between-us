@@ -163,7 +163,6 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
         print(f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
         tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
         current_color = new_message.color
-        db.collection("color").document("color").set({"color": current_color})
         socketio.emit(
             "response-message",
             {
@@ -176,6 +175,17 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
             },
             to=room_id,
         )
+        save_color(current_color)
+
+
+def save_color(color):
+    """Saves the latest color to Firestore. A failure is logged, never raised, because the chat doesn't need it."""
+    # Firestore blocks like OpenAI does, so it also runs in a real thread. Without retries, expired credentials
+    # or an outage fail in seconds instead of tying up a thread for the default 60 s.
+    try:
+        tpool.execute(db.collection("color").document("color").set, {"color": color}, timeout=5, retry=None)
+    except Exception as e:
+        print("could not save color:", e)
 
 
 def parse_completion(messages: list, response_format):

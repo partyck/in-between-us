@@ -80,13 +80,13 @@ Rules ([on_login](src/main.py#L47-L68), [end_session](src/main.py#L111-L126)):
 2. **OpenAI call 1:** rewrite the message, or write a new one for a ghost message, using the client-supplied history (`MessageResponse`).
 3. **OpenAI call 2:** pick two tones from the list for the next message (`ToneResponse`).
 4. If the sender's room changed while OpenAI was answering, drop the reply.
-5. Write the sender's slider color to Firestore.
-6. Emit `response-message` to the room, so both clients get it.
+5. Emit `response-message` to the room, so both clients get it.
+6. Write the sender's slider color to Firestore. A failure is only logged.
 
 ### Concurrency model
 
 - The server runs eventlet **without monkey-patching**, because monkey-patching breaks the gRPC library that Firestore uses. Every handler runs as a green thread on one OS thread, so any blocking call freezes every client.
-- OpenAI calls therefore go through `tpool.execute`, which runs them in a real thread (20 s timeout, one retry).
+- OpenAI calls therefore go through `tpool.execute`, which runs them in a real thread (20 s timeout, one retry). The Firestore write does too (5 s timeout, no retry).
 - `pairing_lock` is a real `threading.Lock`. That's safe only because nothing inside it yields.
 - python-socketio runs each incoming event in its own green thread. Two events from the same client can be processed at the same time and finish in either order.
 
@@ -230,9 +230,9 @@ sequenceDiagram
     S->>O: pick the next two tones (tpool)
     O-->>S: ToneResponse
     Note over S: drop the reply if the pairing changed
-    S->>F: set color/color to the slider color
     S-->>A: response-message
     S-->>B: response-message
+    S->>F: set color/color to the slider color (tpool)
     A->>A: rewrite the bubble whose text equals prompt
     B->>B: add partner bubble, play sound
     Note over A,B: both sliders switch to the new tones
@@ -338,7 +338,7 @@ Messages are printed to stdout ([main.py:81](src/main.py#L81), [93](src/main.py#
 ### Sockets and protocol
 
 **P1. High: a failed message spins forever.**
-There's no error path. If OpenAI times out or refuses (`parsed` is `None`), returns an unknown tone, the payload is malformed, or the Firestore write throws, the handler simply ends ([main.py:143-178](src/main.py#L143-L178)). Nothing is emitted, and the sender's bubble keeps its waiting animation with no retry. There are no acknowledgements, no error event and no `@socketio.on_error_default` handler. On a refusal, the second OpenAI call still runs.
+There's no error path. If OpenAI times out or refuses (`parsed` is `None`), returns an unknown tone, or the payload is malformed, the handler simply ends ([main.py:143-178](src/main.py#L143-L178)). Nothing is emitted, and the sender's bubble keeps its waiting animation with no retry. There are no acknowledgements, no error event and no `@socketio.on_error_default` handler. On a refusal, the second OpenAI call still runs.
 *Fix:* emit an error event carrying the message id (or use an ack callback), and let the client mark the bubble as failed or drop it. Check `message.refusal` explicitly, and skip the tone call when there's no message.
 
 **P2. Medium: replies are matched to bubbles by text.**
@@ -367,13 +367,13 @@ The `disconnect` handler only logs ([sockets.js:18-20](src/web/static/js/sockets
 
 ### Architecture
 
-**A1. Medium: the Firestore write blocks the server and holds up delivery.**
-`db.collection("color").document("color").set(...)` ([main.py:166](src/main.py#L166)) is a synchronous gRPC call on eventlet's main thread. It's the same kind of blocking call that the README moves OpenAI into `tpool` to avoid. It also runs *before* the emit, so a slow Firestore, a permission error or an outage stops every message from being delivered.
-*Fix:* emit first, then run the write in `tpool` (or a background task) inside `try`/`except`.
+**A1. Fixed: the Firestore write blocked the server and held up delivery.**
+The color write was a synchronous gRPC call on eventlet's main thread, made before the emit. With expired Google credentials, Firestore retried for up to 60 s, and the whole server froze meanwhile. Both clients hit the heartbeat timeout and reconnected, which cleared the chat. Ghost messages go through the same path, so this repeated with nobody typing.
+*Fixed by:* [`save_color`](src/main.py#L181), which runs after the emit, in `tpool`, with a 5 s timeout and no retry, and only logs a failure.
 
 **A2. Medium: eventlet adds risk that two clients don't need.**
-Running without monkey-patching means every blocking call has to remember `tpool` (A1 is one that didn't), and `pairing_lock` would deadlock the whole server if anything inside it ever yielded. Eventlet is in maintenance mode, and its maintainers discourage new use.
-*Fix:* with two clients, `async_mode="threading"` (with `simple-websocket`, and e.g. gunicorn `-w 1 --threads 50`) removes the need for `tpool`, makes the lock an ordinary lock, and fixes A1 without extra code.
+Running without monkey-patching means every blocking call has to remember `tpool` (A1 was one that didn't), and `pairing_lock` would deadlock the whole server if anything inside it ever yielded. Eventlet is in maintenance mode, and its maintainers discourage new use.
+*Fix:* with two clients, `async_mode="threading"` (with `simple-websocket`, and e.g. gunicorn `-w 1 --threads 50`) removes the need for `tpool`, and makes the lock an ordinary lock.
 
 **A3. Medium: the server keeps no conversation state.**
 Each client keeps its own message list and sends it with every event. That single choice causes the ghost-history off-by-one and the name-based identity problem (both in todo.md), as well as S4, S5 and P3. The server already knows each room, so it can keep the last N messages per room in memory, next to the pairing state.

@@ -33,7 +33,7 @@ The client moves through four scenes ([scene.js](src/web/static/js/scene.js), sw
 
 - **Pairing state lives in memory** (`waiting_user`, `partners` and `rooms` in [main.py](src/main.py)). With only two installations there's nothing to share, and a restart just clears the state; clients log in again when they reconnect. Firestore only stores the current `color` document.
 - **Run exactly one server process and one instance.** A second instance keeps its own pairing state and can leave the two installations unable to reach each other. If the host autoscales (e.g. Cloud Run), set max instances to 1.
-- **OpenAI calls run in `eventlet.tpool`.** The server runs in eventlet mode without monkey-patching, so a blocking call on the main thread would freeze every client. Don't add `eventlet.monkey_patch()`: it's known to break the gRPC library Firestore uses. Calls time out after 20 s and retry once.
+- **OpenAI and Firestore calls run in `eventlet.tpool`.** The server runs in eventlet mode without monkey-patching, so a blocking call on the main thread would freeze every client. Don't add `eventlet.monkey_patch()`: it's known to break the gRPC library Firestore uses. OpenAI calls time out after 20 s and retry once. The Firestore color write happens after the message is sent, times out after 5 s with no retry, and a failure is only logged.
 - A reply is dropped if the sender is no longer paired, or is paired with someone else, by the time OpenAI answers.
 
 ## Known limitations
