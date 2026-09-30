@@ -41,7 +41,7 @@ class SocketService {
   }
 
   sendMessage(userName, message, tone, messageHistory) {
-    console.log('🔌➡️ send message.');
+    console.log('🔌➡️ send message:', message);
     this.socket.emit('send-message', {
       userName,
       message,
