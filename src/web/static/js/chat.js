@@ -17,7 +17,9 @@ class Chat extends Scene {
     this.toneController = new ToneController();
     this.bgC = c.bgColor;
     this.isWaiting = true;
-    this.count = 0;
+    // When the last message was sent or received (a performance.now() time), for the ghost message's timer.
+    this.lastMessageAt = performance.now();
+    // Seconds of silence before a ghost message.
     this.waiting = random(30, 45);
 
     this.sound = new Sound();
@@ -28,7 +30,7 @@ class Chat extends Scene {
   }
 
   add(message, newUserName, prompt, tone1, tone2, newColor) {
-    this.count = 0;
+    this.lastMessageAt = performance.now();
     this.isWaiting = newUserName !== userName;
     this.toneController.addTones(tone1, tone2);
 
@@ -62,6 +64,8 @@ class Chat extends Scene {
     super.enter();
     this.recipientNameE.elt.textContent = `You are talking to ${recipientName}`;
     this.toneController.setToneValue();
+    // A new partner gets the full silence before a ghost message.
+    this.lastMessageAt = performance.now();
   }
 
   exit() {
@@ -89,7 +93,7 @@ class Chat extends Scene {
       this.messages.push(newMessage);
       socketService.sendMessage(userName, message, this.toneController.tonePayload(), this.messageHistory);
       this.messageInput.value("");
-      this.count = 0;
+      this.lastMessageAt = performance.now();
     }
   }
 
@@ -107,10 +111,12 @@ class Chat extends Scene {
 
   ghostMessage() {
     if (!this.isWaiting) return;
-    this.count++;
-    if (this.waiting * frameRate() - this.count > 0) return;
+    // Timed by the clock, not by counting frames at frameRate(), so a slow frame (like the first one after the iPad
+    // wakes up) can't send it early. Written so that a NaN waits instead of sending: NaN >= anything is false.
+    const silence = performance.now() - this.lastMessageAt;
+    if (!(silence >= this.waiting * 1000)) return;
     socketService.sendGhostMessage(userName, this.toneController.tonePayload(), this.messageHistory);
-    this.count = 0;
+    this.lastMessageAt = performance.now();
     this.isWaiting = true;
   }
 }

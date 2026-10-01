@@ -1,3 +1,7 @@
+// The maths that runs every frame in this scene is plain Math, not p5's helpers (random, constrain, dist, lerpColor,
+// sin...). Once Safari had optimised repelFromPointer written with p5's dist, atan2 and map, it pushed bubbles to NaN
+// on the iPads, though the same numbers worked out fine anywhere else. A bubble at NaN makes display() throw, and that
+// stops the sketch.
 const HOME_TEXT_SIZE = 24;
 
 class Home extends Scene {
@@ -57,8 +61,9 @@ class Bubble {
     const selectionIndex = Math.floor(Math.random() * (c.tones.length));
     const selection = c.tones[selectionIndex];
     selection.selected++;
-    this.c1 = color(selection.toneA.rgb.r, selection.toneA.rgb.g, selection.toneA.rgb.b);
-    this.c2 = color(selection.toneB.rgb.r, selection.toneB.rgb.g, selection.toneB.rgb.b);
+    // { r, g, b } from 0 to 255.
+    this.c1 = selection.toneA.rgb;
+    this.c2 = selection.toneB.rgb;
     this.osc = 0;
 
     this.falloff = [];
@@ -70,8 +75,8 @@ class Bubble {
   }
 
   move() {
-    this.y = constrain(this.y + random(-1, 1), 20, height - 20);
-    this.x = constrain(this.x + random(-1, 1), 20, width - 20);
+    this.y = wander(this.y, 20, height - 20);
+    this.x = wander(this.x, 20, width - 20);
   }
 
   repel() {
@@ -79,7 +84,11 @@ class Bubble {
   }
 
   display() {
-    const [red, green, blue] = lerpColor(this.c1, this.c2, this.osc).levels;
+    // lerpColor(c1, c2, osc).levels, worked out by hand.
+    const { c1, c2, osc } = this;
+    const red = Math.round(c1.r + (c2.r - c1.r) * osc);
+    const green = Math.round(c1.g + (c2.g - c1.g) * osc);
+    const blue = Math.round(c1.b + (c2.b - c1.b) * osc);
     const gradient = drawingContext.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
     for (const [offset, alpha] of this.falloff) {
       gradient.addColorStop(offset, `rgba(${red}, ${green}, ${blue}, ${alpha})`);
@@ -91,14 +100,16 @@ class Bubble {
     drawingContext.arc(this.x, this.y, this.r, 0, TWO_PI);
     drawingContext.fill();
     drawingContext.restore();
-    this.osc = (sin(frameCount * (this.r / 10000)) + 1) / 2;
+    this.osc = (Math.sin(frameCount * (this.r / 10000)) + 1) / 2;
   }
 }
 
+// One step of a random walk: moves value by up to 1 either way, then keeps it within [low, high].
+function wander(value, low, high) {
+  return Math.max(Math.min(value + Math.random() * 2 - 1, high), low);
+}
+
 // Pushes something at (x, y) away from the pointer once it's within 3r of it, harder the closer it gets.
-// This is plain Math on purpose. Written with p5's dist, atan2, map, cos and sin, it pushed bubbles to NaN on the
-// iPads once Safari had optimised it, though the same numbers worked out fine anywhere else, and a bubble at NaN
-// stops the sketch.
 function repelFromPointer(bubble, r) {
   const dx = bubble.x - mouseX;
   const dy = bubble.y - mouseY;
@@ -145,7 +156,7 @@ class BubbleM {
     for (let i = 0; i < steps; i++) {
       const rectHeight = this.h * i / steps;
       // Circles at first. Fully grown, each layer is (w - h) + rectHeight * 0.5 wide.
-      const rectWidth = max(0, core - rectHeight * 0.5) + rectHeight;
+      const rectWidth = Math.max(0, core - rectHeight * 0.5) + rectHeight;
       rect(this.x, this.y, rectWidth, rectHeight, 30);
     }
 
@@ -178,8 +189,8 @@ class BubbleM {
 
   move() {
     // Same random walk as Bubble.move, but the margin is half the button so it never slides off screen.
-    this.y = constrain(this.y + random(-1, 1), this.h * 0.5, height - this.h * 0.5);
-    this.x = constrain(this.x + random(-1, 1), this.w * 0.5, width - this.w * 0.5);
+    this.y = wander(this.y, this.h * 0.5, height - this.h * 0.5);
+    this.x = wander(this.x, this.w * 0.5, width - this.w * 0.5);
   }
 
   repel() {
@@ -190,9 +201,9 @@ class BubbleM {
   update() {
     // Driven by deltaTime (ms since the last frame), so each step takes as long at any frame rate.
     if (!this.isGrown()) {
-      this.growth = min(this.growth + deltaTime / BUBBLE_M_GROW_MS, 1);
+      this.growth = Math.min(this.growth + deltaTime / BUBBLE_M_GROW_MS, 1);
     } else {
-      this.focus = min(this.focus + deltaTime / BUBBLE_M_FOCUS_MS, 1);
+      this.focus = Math.min(this.focus + deltaTime / BUBBLE_M_FOCUS_MS, 1);
     }
   }
 
@@ -206,8 +217,8 @@ class BubbleM {
 
   isHovered() {
     // display() draws with rectMode(CENTER), so (x, y) is the button's centre, not its corner.
-    const isOverX = abs(mouseX - this.x) < this.w * 0.5;
-    const isOverY = abs(mouseY - this.y) < this.h * 0.5;
+    const isOverX = Math.abs(mouseX - this.x) < this.w * 0.5;
+    const isOverY = Math.abs(mouseY - this.y) < this.h * 0.5;
     return isOverX && isOverY;
   }
 }
