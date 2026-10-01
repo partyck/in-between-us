@@ -21,6 +21,8 @@ class Home extends Scene {
     textSize(HOME_TEXT_SIZE);
     this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
     pop();
+    // Set by leave() once the button is touched.
+    this.leaving = false;
   }
 
   draw() {
@@ -34,14 +36,33 @@ class Home extends Scene {
     this.m1.update();
 
     for (let bubble of this.bubbles) {
-      bubble.move();
-      bubble.repel();
+      // move() keeps a bubble on screen, so it stops once they start leaving.
+      if (this.leaving) {
+        bubble.fly();
+      } else {
+        bubble.move();
+        bubble.repel();
+      }
       bubble.display();
     }
 
+    if (this.leaving) {
+      if (this.bubbles.every(bubble => bubble.isOffScreen())) {
+        changeScene(login);
+      }
+    }
     // The button only works once it has grown to full size and its text is in focus.
-    if (this.m1.isReady() && this.m1.isHovered()) {
-      changeScene(login);
+    else if (this.m1.isReady() && this.m1.isHovered()) {
+      this.leave();
+    }
+  }
+
+  // Sends every bubble but the button off screen, away from where it was touched. Once they're all gone, draw()
+  // moves on to the login scene.
+  leave() {
+    this.leaving = true;
+    for (let bubble of this.bubbles) {
+      bubble.flee(mouseX, mouseY);
     }
   }
 }
@@ -52,6 +73,8 @@ class Home extends Scene {
 // that curve draws the same thing in one fill instead of r.
 const BUBBLE_LAYER_ALPHA = 6 / 255;
 const BUBBLE_GRADIENT_STOPS = 10;
+// How fast the bubbles leave once the button is touched, in sketch pixels per ms.
+const BUBBLE_FLEE_SPEED = 1;
 
 class Bubble {
   constructor(x, y, r) {
@@ -81,6 +104,25 @@ class Bubble {
 
   repel() {
     repelFromPointer(this, this.r);
+  }
+
+  // Heads straight away from (x, y) for fly() to follow. A bubble right on the point picks a direction at random.
+  flee(x, y) {
+    const dx = this.x - x;
+    const dy = this.y - y;
+    const angle = dx === 0 && dy === 0 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+    this.vx = Math.cos(angle) * BUBBLE_FLEE_SPEED;
+    this.vy = Math.sin(angle) * BUBBLE_FLEE_SPEED;
+  }
+
+  fly() {
+    // Driven by deltaTime (ms since the last frame), so the bubbles leave as fast at any frame rate.
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+  }
+
+  isOffScreen() {
+    return this.x + this.r < 0 || this.x - this.r > width || this.y + this.r < 0 || this.y - this.r > height;
   }
 
   display() {
