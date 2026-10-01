@@ -96,14 +96,20 @@ class Bubble {
 }
 
 // Pushes something at (x, y) away from the pointer once it's within 3r of it, harder the closer it gets.
+// This is plain Math on purpose. Written with p5's dist, atan2, map, cos and sin, it pushed bubbles to NaN on the
+// iPads once Safari had optimised it, though the same numbers worked out fine anywhere else, and a bubble at NaN
+// stops the sketch.
 function repelFromPointer(bubble, r) {
-  const d = dist(bubble.x, bubble.y, mouseX, mouseY);
+  const dx = bubble.x - mouseX;
+  const dy = bubble.y - mouseY;
+  const d = Math.hypot(dx, dy);
   const strength = 3;
   if (d < r * strength) {
-    const angle = atan2(bubble.y - mouseY, bubble.x - mouseX);
-    const force = map(d, 0, r * strength, 3, 0);
-    bubble.x += cos(angle) * force;
-    bubble.y += sin(angle) * force;
+    const angle = Math.atan2(dy, dx);
+    // 3 at the pointer, down to 0 at r * strength.
+    const force = 3 - 3 * d / (r * strength);
+    bubble.x += Math.cos(angle) * force;
+    bubble.y += Math.sin(angle) * force;
   }
 }
 
