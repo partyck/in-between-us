@@ -1,14 +1,16 @@
 import hmac
 import os
 import threading
+import time
 import uuid
+from collections import deque
 from typing import Optional
 
 from eventlet import tpool
 from firebase_admin import firestore, initialize_app
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, disconnect, join_room, leave_room
-from openai import OpenAI
+from openai import LengthFinishReasonError, OpenAI
 
 from config import DEBUG, OPENAI_API_KEY, STATION_KEY, STATIONS, TONES_BY_NAME, TONES_PROMPT
 from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
@@ -38,7 +40,19 @@ rooms: dict[str, str] = {}  # session id -> room id
 stations: dict[str, str] = {}  # session id -> station
 station_sessions: dict[str, str] = {}  # station -> session id of the socket that holds it
 
-MAX_NAME_LENGTH = 40  # keep in sync with maxlength on #name-input
+MAX_NAME_LENGTH = 40  # also the name input's maxlength, through route_home
+MAX_MESSAGE_LENGTH = 500  # also the chat input's maxlength, through route_home
+# Everything the client sends ends up in two OpenAI prompts, so these bound what one message can cost (S4). The client
+# sends at most the last 9 messages. History entries are mostly rewrites, which can come out longer than what was typed.
+MAX_HISTORY_ITEMS = 10
+MAX_HISTORY_ITEM_LENGTH = 1000
+# A visitor typing fast, plus ghost messages, stays well under this, so it only stops a looping script or a client bug.
+# It counts per station rather than per socket, so reconnecting doesn't reset it.
+MAX_REQUESTS_PER_MINUTE = 20
+request_times: dict[str, deque[float]] = {station: deque() for station in STATIONS}  # station -> recent request times
+# The model always reasons, and its reasoning counts against this cap too, so it leaves plenty of room beyond the reply
+# itself, which is a few hundred tokens at most. Without a cap, one reply could run to the model's 128K-token maximum.
+MAX_COMPLETION_TOKENS = 4000
 
 
 # SOCKETS
@@ -112,7 +126,9 @@ def on_logout():
 
 @socketio.on("send-message")
 def event_send_message(data):
-    new_message = MessageInput.from_json(data)
+    new_message = read_message(data)
+    if not new_message:
+        return
     print(f'new message from: {new_message.user_name} prompt: "{new_message.message}"')
     respond(
         request.sid,  # type: ignore
@@ -124,7 +140,9 @@ def event_send_message(data):
 
 @socketio.on("send-ghost-message")
 def event_send_ghost_message(data):
-    new_message = MessageInput.from_json(data)
+    new_message = read_message(data)
+    if not new_message:
+        return
     print(f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}"')
     respond(
         request.sid,  # type: ignore
@@ -139,13 +157,53 @@ def event_send_ghost_message(data):
 
 @app.route("/")
 def route_home():
-    return render_template("index.html")
+    return render_template("index.html", max_name_length=MAX_NAME_LENGTH, max_message_length=MAX_MESSAGE_LENGTH)
 
 
 # HELPERS
 def is_station_key(key) -> bool:
     # compare_digest takes the same time wherever the strings differ, so the key can't be guessed from timings.
     return isinstance(key, str) and hmac.compare_digest(key.encode(), STATION_KEY.encode())  # type: ignore
+
+
+def read_message(data) -> Optional[MessageInput]:
+    """Returns a send-message or send-ghost-message payload within the rate and size limits, or None to drop it."""
+    session_id = request.sid  # type: ignore
+    station = stations.get(session_id)
+    if not station:  # only a socket that passed the station key has one
+        return None
+    if not within_rate_limit(station):
+        print("message dropped, over the rate limit:", session_id)
+        return None
+    new_message = MessageInput.from_json(data)
+    # The chat input can't hold more, so a longer message comes from a modified client. Dropping it beats rewriting
+    # something the visitor didn't type in full.
+    if len(new_message.message) > MAX_MESSAGE_LENGTH:
+        print("message dropped, too long:", session_id)
+        return None
+    # The client only sends tone names the server gave it. Any other name would be free text in the prompt.
+    if new_message.tone_1.tone not in TONES_BY_NAME or new_message.tone_2.tone not in TONES_BY_NAME:
+        print("message dropped, unknown tone:", session_id)
+        return None
+    # Names and earlier messages are only context, so they're cut instead.
+    new_message.user_name = new_message.user_name[:MAX_NAME_LENGTH]
+    new_message.message_history = [
+        {"name": item["name"][:MAX_NAME_LENGTH], "content": item["content"][:MAX_HISTORY_ITEM_LENGTH]}
+        for item in new_message.message_history[-MAX_HISTORY_ITEMS:]
+    ]
+    return new_message
+
+
+def within_rate_limit(station: str) -> bool:
+    """Counts a request against the station's MAX_REQUESTS_PER_MINUTE, or returns False if none are left."""
+    now = time.monotonic()
+    times = request_times[station]
+    while times and now - times[0] >= 60:
+        times.popleft()
+    if len(times) >= MAX_REQUESTS_PER_MINUTE:
+        return False
+    times.append(now)
+    return True
 
 
 def end_session(session_id: str, event: str, message: str):
@@ -180,8 +238,10 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
         MessageResponse,
     )
 
-    if message:
-        new_message.add_message(message)
+    # With no message there's nothing to send, so don't pay for the tones.
+    if not message:
+        return
+    new_message.add_message(message)
 
     tones_response = parse_completion(
         [
@@ -230,15 +290,21 @@ def save_color(color):
 
 def parse_completion(messages: list, response_format):
     # OpenAI calls block, so run them in a real thread; otherwise every other client freezes while one waits.
-    completion = tpool.execute(
-        client.beta.chat.completions.parse,
-        # model="gpt-4o-mini",
-        # model="gpt-4o-2024-08-06",
-        model="gpt-6.1-sol",
-        store=True,
-        messages=messages,
-        response_format=response_format,
-    )
+    try:
+        completion = tpool.execute(
+            client.beta.chat.completions.parse,
+            # model="gpt-4o-mini",
+            # model="gpt-4o-2024-08-06",
+            model="gpt-6.1-sol",
+            store=True,
+            max_completion_tokens=MAX_COMPLETION_TOKENS,
+            messages=messages,
+            response_format=response_format,
+        )
+    except LengthFinishReasonError:
+        # The reply hit MAX_COMPLETION_TOKENS, so it's cut off and can't be parsed.
+        print("OpenAI reply dropped, longer than", MAX_COMPLETION_TOKENS, "tokens")
+        return None
     return completion.choices[0].message.parsed  # type: ignore
 
 

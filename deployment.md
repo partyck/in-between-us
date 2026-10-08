@@ -69,6 +69,8 @@ SA=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')-compu
 
    A failed write doesn't stop the chat. It's only logged, as `could not save color`.
 
+6. Set a budget limit on the OpenAI project, in the OpenAI dashboard. The server holds each station to 20 messages a minute, at two OpenAI calls each, but only the budget limit caps the total.
+
 ## Deploy
 
 1. Build the image with Cloud Build. `src` is the build context, and `.gcloudignore` decides what's uploaded. Commit first, so the tag matches the code.
@@ -203,4 +205,4 @@ These are open in [todo.md](todo.md):
 
 - **D1:** the image is built on the dev container image, runs as root, and installs packages nothing uses.
 - **D4:** there's no health check, so nobody notices when a kiosk's browser crashes.
-- **S4:** OpenAI spend has no limit. Only the installations can connect, but set a budget limit on the OpenAI project anyway.
+- **D6:** the service keeps Cloud Run's default of 80 requests at a time, and each open WebSocket holds one, so enough idle connections can keep the iPads out.

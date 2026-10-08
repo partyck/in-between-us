@@ -2,7 +2,7 @@
 
 In Between Us connects two installations. A visitor at each one types a name, is paired with the visitor at the other installation, and they chat. Every message goes through OpenAI and is rewritten in the tone the sender picked on a slider before either side sees it. If a visitor stays silent, the AI writes a message on their behalf.
 
-This document describes the code as of `c0b53ca` plus the uncommitted scene refactor ([scene.js](src/web/static/js/scene.js)). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
+This document describes the code as of `13de701`, plus the S4 spend limits (not committed yet). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
 
 ## 1. System overview
 
@@ -22,7 +22,7 @@ flowchart LR
         SIO --- PAIR
         SIO --> TP
     end
-    OAI["OpenAI<br/>gpt-4o-2024-08-06"]
+    OAI["OpenAI<br/>gpt-6.1-sol"]
     FS[("Firestore<br/>color/color")]
     EXT["External reader?<br/>not in this repo"]
     CA <-->|Socket.IO| SIO
@@ -36,7 +36,7 @@ flowchart LR
 
 - **Two browser clients.** Each installation is an iPad running the same page as a home-screen app. It's set up once as station A or B with the shared station key, which it keeps in `localStorage`. The socket handshake carries both, and the server refuses any other socket.
 - **One server process.** Flask serves the page and static files. Flask-SocketIO, in eventlet mode, handles the socket events. All pairing state is in memory, so the server must run as a single process on a single instance.
-- **OpenAI.** Each message costs two structured-output calls: one rewrites the text, the other picks the next pair of tones for the slider.
+- **OpenAI.** Each message costs two structured-output calls: one rewrites the text, the other picks the next pair of tones for the slider. The model is set in `parse_completion` ([main.py](src/main.py#L291-L308)).
 - **Firestore.** Only one document is used, `color/color`. It's overwritten with the sender's slider color on every delivered message. Nothing in this repo reads it back, so it may not be needed at all (A7 in [todo.md](todo.md)).
 
 ## 2. Server
@@ -66,7 +66,7 @@ A session is always in one of three states:
 | Waiting | `waiting_user` | `login` while the slot is empty | Someone else logs in, or its own `logout`, disconnect or new `login` |
 | Paired | `partners`, `rooms`, and the Socket.IO room | `login` while someone else is waiting | Its own or its partner's `logout`, disconnect or new `login` |
 
-Rules ([on_connect](src/main.py#L45-L63), [on_login](src/main.py#L77-L103), [end_session](src/main.py#L151-L166)):
+Rules ([on_connect](src/main.py#L59-L77), [on_login](src/main.py#L91-L117), [end_session](src/main.py#L209-L224)):
 
 - A socket is only accepted with `auth: {station, key}`, where the station is `A` or `B` and the key matches `STATION_KEY`. Anything else is refused in the handshake.
 - The newest socket for a station wins. The older one is disconnected, which ends its session like any disconnect.
@@ -78,14 +78,19 @@ Rules ([on_connect](src/main.py#L45-L63), [on_login](src/main.py#L77-L103), [end
 
 ### Handling a message
 
-[`respond()`](src/main.py#L133-L182) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
+[`respond()`](src/main.py#L227-L278) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
 
-1. Look up the sender's room. If they aren't paired, drop the event.
-2. **OpenAI call 1:** rewrite the message, or write a new one for a ghost message, using the client-supplied history (`MessageResponse`).
-3. **OpenAI call 2:** pick two tones from the list for the next message (`ToneResponse`).
-4. If the sender's room changed while OpenAI was answering, drop the reply.
-5. Emit `response-message` to the room, so both clients get it.
-6. Write the sender's slider color to Firestore. A failure is only logged.
+1. **Limits** ([`read_message`](src/main.py#L169-L194)), which bound OpenAI spend (S4). Each step drops the message, and the sender's bubble keeps waiting (P1).
+   - **Rate.** Drop the message if the socket has no station, or if its station has sent 20 messages in the last minute ([`within_rate_limit`](src/main.py#L197-L206)). The count is per station, so a reconnect doesn't reset it.
+   - **Size.** Drop a message over 500 characters, or one whose tone names aren't in the tone table. Cut the sender's name to 40 characters, and keep the last 10 history entries, each cut to a 40-character name and 1000 characters of text.
+2. Look up the sender's room. If they aren't paired, drop the event.
+3. **OpenAI call 1:** rewrite the message, or write a new one for a ghost message, using the client-supplied history (`MessageResponse`). If there's no message, because OpenAI refused or the reply hit the 4000-token output cap, stop here.
+4. **OpenAI call 2:** pick two tones from the list for the next message (`ToneResponse`).
+5. If the sender's room changed while OpenAI was answering, drop the reply.
+6. Emit `response-message` to the room, so both clients get it.
+7. Write the sender's slider color to Firestore. A failure is only logged.
+
+Both OpenAI calls set `max_completion_tokens` to 4000 ([`parse_completion`](src/main.py#L291-L308)). The model always reasons, and reasoning counts against the cap, so it's set well above what a rewrite needs. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` logs and turns into `None`.
 
 ### Concurrency model
 
@@ -96,14 +101,14 @@ Rules ([on_connect](src/main.py#L45-L63), [on_login](src/main.py#L77-L103), [end
 
 ## 3. Client
 
-The client uses p5.js in global mode. `setup()` builds every scene once, and `draw()` calls `currentScene.draw()` every frame.
+The client uses p5.js in global mode. `setup()` builds every scene once, then connects and shows Home if a station is saved, or shows Setup if not. `draw()` calls `currentScene.draw()` every frame, between `push()` and `pop()`, so one scene's drawing state can't leak into the next. If `draw()` throws, p5 stops drawing for good, so code that runs every frame must not throw (see the README's [client notes](README.md#client-notes)).
 
 | File | Role |
 | --- | --- |
 | [main.js](src/web/static/js/main.js) | p5 `setup`/`draw`, global state (`userName`, `recipientName`, `currentScene`), `changeScene`, idle reload timer |
 | [scene.js](src/web/static/js/scene.js) | `Scene` base class: shows the scene's root element while current, optional socket hooks |
 | [sockets.js](src/web/static/js/sockets.js) | `SocketService`: wraps `io()`, forwards server events to the current scene, emit helpers |
-| [home.js](src/web/static/js/home.js) | Home scene: floating bubbles, "touch here to connect" |
+| [home.js](src/web/static/js/home.js) | Home scene: drifting bubbles, the "touch here to connect" button, the exit animation |
 | [loginScene.js](src/web/static/js/loginScene.js) | Name input |
 | [waiting.js](src/web/static/js/waiting.js) | Emits `login`, waits for `room` |
 | [setup.js](src/web/static/js/setup.js) | Chooses the station and takes the key, saved in `localStorage`. A `#station=…&key=…` URL overrides them |
@@ -119,7 +124,7 @@ The client uses p5.js in global mode. `setup()` builds every scene once, and `dr
 ```mermaid
 stateDiagram-v2
     [*] --> Home: page load
-    Home --> Login: tap the bubble or the logo
+    Home --> Login: touch the ready button, the bubbles fly off
     Login --> Waiting: submit name, emit login
     Waiting --> Chat: room
     Waiting --> Waiting: reconnect, emit login
@@ -155,13 +160,21 @@ Any scene can go to Setup or Closed, not only Home. Neither leaves by itself.
 | `connect_error`, when the handshake was refused | none | Shows Setup, with an error |
 | `disconnect` by the server | none | Shows Closed: the station was opened on another screen |
 
+### Home scene
+
+- **Bubbles.** About `width × height × 0.0002` bubbles (186 on the iPads) drift on a random walk, and move away from the pointer when it comes within three radii. Each one is a single radial gradient that shifts between the two colors of a random tone pair. Until the first touch, p5 puts the pointer at (0, 0), so the bubbles near the top-left corner are pushed from the start.
+- **Button.** "touch here to connect" grows from a round bubble to its full width over 10 s, then its text comes into focus over 3 s. It drifts and moves away from the pointer like the bubbles. It only responds once the text is sharp, and the pointer only has to be over it, which on the iPads means a touch.
+- **Leaving.** Then every other bubble flies straight away from the touch at a constant speed (`BUBBLE_FLEE_SPEED`), and Login opens once they're all off screen.
+- **Per-frame maths** uses plain `Math` and `deltaTime`, not p5's math helpers or frame counts. On the iPads, Safari once turned the p5 version into `NaN` and froze the sketch (see Done in [todo.md](todo.md)).
+
 ### Chat scene
 
 - **Own message.** A bubble with the typed text appears at once, with a pulsing "waiting" style. When `response-message` comes back with the visitor's own `userName`, the bubble whose text equals `prompt` is rewritten in place. If none matches (a ghost message), a new bubble is added on the visitor's side.
 - **Partner's message.** Added as a new bubble, with a sound.
 - **Tones.** Every `response-message` replaces the slider's two tones on both screens.
-- **History.** Each event carries up to the last 10 messages, minus the newest one, as `{name, content}`. The server keeps no history of its own.
-- **Ghost timer.** After the partner's message, or from the start of the chat, the client waits 30–45 s. If the visitor hasn't sent anything by then, it emits `send-ghost-message`.
+- **History.** Each event carries up to the last 10 messages, minus the newest one, as `{name, content}`. The server keeps no history of its own, and uses at most the last 10 entries it's sent.
+- **Message length.** The chat input's `maxlength` is the server's `MAX_MESSAGE_LENGTH` (500), which `route_home` passes to the template, so the two can't drift apart. The server drops a longer message, and its bubble would wait forever (P1).
+- **Ghost timer.** After the partner's message, or from the start of the chat, the client waits 30–45 s, measured with `performance.now()`. If the visitor hasn't sent anything by then, it emits `send-ghost-message`. The delay is chosen once per page load, and the waiting flag carries over from the previous chat (F6 in [todo.md](todo.md)).
 
 ## 4. Socket protocol
 
@@ -191,7 +204,7 @@ The client uses Socket.IO 4.6.1 and the server python-socketio 5.7.2, on the def
 }
 ```
 
-The server rewrites the message to sound `max(tone1Value, tone2Value)`% more like the stronger tone.
+The server rewrites the message to sound `max(tone1Value, tone2Value)`% more like the stronger tone. It drops the event if the sender's station has already sent 20 messages in the last minute, if `message` is over 500 characters, or if a tone name isn't in the tone table. It cuts `userName` to 40 characters, and keeps the last 10 `messageHistory` entries, each cut to a 40-character `name` and a 1000-character `content`.
 
 ### Server → client
 
@@ -301,7 +314,7 @@ sequenceDiagram
 
 | # | Use case | Trigger | What happens | Events |
 | --- | --- | --- | --- | --- |
-| 1 | Start a conversation | A visitor taps "touch here to connect" and enters a name | The installation shows "Waiting for someone to join." | `login` |
+| 1 | Start a conversation | A visitor touches "touch here to connect" once its text is sharp, and enters a name once the bubbles have flown off | The installation shows "Waiting for someone to join." | `login` |
 | 2 | Get paired | A second visitor logs in while the first is waiting | Both screens show "You are talking to …" | `room` |
 | 3 | Send a message | The visitor types and presses send | The bubble appears at once, then is replaced with the rewritten text. The partner sees only the rewritten text. Both sliders get new tones | `send-message`, `response-message` |
 | 4 | Choose a tone | The visitor drags the slider | The next message is rewritten toward the stronger tone. The send button takes the slider color | none until the next send |

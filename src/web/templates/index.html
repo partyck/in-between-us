@@ -36,7 +36,7 @@
 
   <section id="login-scene" class="hidden">
     <div class="login-container">
-      <input id="name-input" type="text" class="name-input" maxlength="40" placeholder="Tell me your name... ">
+      <input id="name-input" type="text" class="name-input" maxlength="{{ max_name_length }}" placeholder="Tell me your name... ">
       <button class="login-button">ok</button>
     </div>
   </section>
@@ -52,7 +52,7 @@
     </div>
 
     <div class="input-message-container">
-      <textarea class="chat-input"></textarea>
+      <textarea class="chat-input" maxlength="{{ max_message_length }}"></textarea>
       <button class="send-button">
         <img alt="send message" src="assets/message.png" class="send-icon">
       </button>
