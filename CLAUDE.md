@@ -26,7 +26,7 @@ Context for Claude Code sessions in this repo. The longer docs are linked below.
 
 Conventions:
 
-- todo.md IDs never change: **S** security, **P** sockets/protocol, **A** server architecture, **F** frontend, **D** deployment. Priorities right now: A3 (server-side history with message ids, which fixes P2, P3, P8, P10, S5, F5), P1 (an error path for failed messages).
+- todo.md IDs never change: **S** security, **P** sockets/protocol, **A** server architecture, **F** frontend, **D** deployment. Priorities right now: A3 (server-side history with message ids, which fixes P2, P3, P8, P10, S5, F5).
 - When you fix an item, move it to Done under the same ID, say what changed and why with file links, and write "Not committed yet". Once the user has committed it, a later session replaces that with "Fixed in `<hash>`" (check `git log`). Bugs fixed without an ID go in a "Fixed in `<hash>` (<commit message>):" list at the end of Done.
 - A behaviour change updates README, architecture.md and deployment.md in the same change. Past fixes touched code, docs and todo.md together.
 - Style: plain, short, declarative sentences that explain why. Links are relative markdown links with `#L` line anchors. The anchors drift, so refresh the ones near what you change.
@@ -66,7 +66,7 @@ src/
 - **Auth.** The socket handshake carries `auth: {station, key}`. The station must be in `("A", "B")`, and the key is compared with `hmac.compare_digest`. The newest socket for a station wins and the old one is disconnected (that client shows the Closed scene). Only A pairs with B. CORS stays at its same-origin default: don't set `cors_allowed_origins`.
 - **`respond()`** handles both `send-message` and `send-ghost-message`. It makes two OpenAI calls (`MessageResponse` rewrites the text, then `ToneResponse` picks the tones), drops the reply if the sender's room changed meanwhile, emits `response-message` to the room, and then writes the color to Firestore.
 - **Model.** `parse_completion` in main.py uses `model="gpt-6.1-sol"` with `store=True`. If you change it, update the diagram in architecture.md §1 and the server notes in the README.
-- OpenAI's tone names index `TONES_BY_NAME` directly, so an unknown name raises `KeyError` and the message is silently lost (A6, P1).
+- OpenAI's tone names index `TONES_BY_NAME` directly, so an unknown name raises `KeyError`. `on_error` logs it and answers `{delivered: false}`, so the bubble fades out (A6).
 - **The tone table exists twice:** `TONES_WC` in config.py and `Constants.tones` in constants.js. Change both (A5). `TONES` in config.py is unused.
 - The inputs' `maxlength` comes from main.py, so it can't drift from the server's limits: `route_home` passes `MAX_NAME_LENGTH` (40) and `MAX_MESSAGE_LENGTH` (500) to the template as `max_name_length` and `max_message_length`, for `#name-input` and `.chat-input`.
 - **Spend limits (S4).** `read_message` in main.py checks every `send-message` and `send-ghost-message` before OpenAI sees it.
@@ -75,12 +75,15 @@ src/
   - It cuts names to 40 characters, and keeps the last `MAX_HISTORY_ITEMS` (10) history entries, each cut to `MAX_HISTORY_ITEM_LENGTH` (1000).
   - Anything new that the client sends into a prompt needs a limit there too.
   - `parse_completion` passes `max_completion_tokens=MAX_COMPLETION_TOKENS`. `gpt-6.1-sol` always reasons, and reasoning counts against the cap, so don't set it near the length of a reply. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` turns into `None`. `respond()` then skips the tone call.
-  - Dropped messages are only logged, so the sender's bubble keeps waiting (P1).
+  - Every drop answers the sender's ack with `NOT_DELIVERED` (see the next bullet).
+- **Acks and errors (P1, S10).** The `send-message` and `send-ghost-message` handlers return `DELIVERED` or `NOT_DELIVERED`, which Socket.IO sends back as the ack. Only the ack for `send-message` is used, by the client. Any way out of `respond()` that doesn't emit `response-message` must return `NOT_DELIVERED`, or the bubble waits forever.
+  - `on_error` (`@socketio.on_error_default`) logs the traceback and returns `NOT_DELIVERED`, and `False` when `request.event["message"]` is `connect`. Flask-SocketIO uses the error handler's return value in place of the handler's, so for the handshake anything but `False` would let a socket in without the station key. Keep that check.
 - **Fixes not to undo:**
   - S1: visitor text goes into the DOM only through `textContent`, never p5's `.html()`.
   - S2: no Werkzeug debugger.
   - S3: `config.toml` and `.env` are left out by both `.dockerignore` and `.gcloudignore`. Keep the two files in sync.
   - S8: only sockets with the station key can connect.
+  - S10: an exception in `on_connect` refuses the socket, through `on_error` returning `False`.
 
 ## Client
 
@@ -95,7 +98,8 @@ src/
   4. Create it in `init()`.
 - **Adding a socket event:** add the handler in main.py and a listener in `SocketService.listenSockets` that calls a `currentScene.onX?.()` hook. Update the event tables in README.md and architecture.md §4.
 - The station and key are saved in `localStorage` under the key `station`. A `#station=…&key=…` URL fragment overrides them.
-- The client identifies its own messages by display name (`data.userName === userName`) and matches pending bubbles by text (`content === prompt`). Both are known flaws (P8, P2).
+- The client identifies its own messages by display name (`data.userName === userName`) and matches pending bubbles by text (`content === prompt`). Both are known flaws (P8, P2). A bubble that's fading out is skipped by both the matching and `messageHistory`.
+- **Failed messages (P1).** `sendMessage` takes an `onAck` callback. When the ack is `{delivered: false}`, Chat calls `fadeOut()` on that exact bubble. It stops pulsing (the pulse's 50 stacked layers would hide a fade), fades with `drawingContext.globalAlpha` inside `push()`/`pop()` over `MESSAGE_FADE_MS` (6000), and `Chat.removeFadedMessage` then removes it and moves the older bubbles down. p5's `pop()` resyncs its cached fill, so `globalAlpha` doesn't leak into other bubbles.
 
 ## iPad and Safari lessons
 

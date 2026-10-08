@@ -62,13 +62,17 @@ class SocketService {
     });
   }
 
-  sendMessage(userName, message, tone, messageHistory) {
+  // onAck gets the server's answer once it's done with the message. `{delivered: false}` means it was dropped (P1).
+  sendMessage(userName, message, tone, messageHistory, onAck) {
     console.log('🔌➡️ send message:', message);
     this.socket.emit('send-message', {
       userName,
       message,
       tone,
       messageHistory
+    }, (ack) => {
+      console.log('🔌⬅️ send message ack:', ack);
+      onAck?.(ack);
     });
   }
 

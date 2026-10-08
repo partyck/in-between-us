@@ -25,8 +25,9 @@ class Chat extends Scene {
     this.sound = new Sound();
   }
 
+  // A bubble that's fading out was never delivered, so the partner never saw it.
   get messageHistory() {
-    return this.messages.slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
+    return this.messages.filter(message => !message.isFading()).slice(-10, -1).map(message => { return { 'name': message.userName, 'content': message.content } });
   }
 
   add(message, newUserName, prompt, tone1, tone2, newColor) {
@@ -36,7 +37,7 @@ class Chat extends Scene {
 
     if (newUserName === userName) {
       let newMessage = this.messages.find((message) => {
-        return message.content === prompt;
+        return !message.isFading() && message.content === prompt;
       });
       if (newMessage) {
         let distance = newMessage.rephrase(message);
@@ -81,8 +82,18 @@ class Chat extends Scene {
     this.messages.slice().reverse().forEach((message) => {
       message.display();
     });
+    this.removeFadedMessage();
 
     this.ghostMessage();
+  }
+
+  // Once a dropped message has faded out, its bubble goes, and the older bubbles above it move down into its place.
+  removeFadedMessage() {
+    const index = this.messages.findIndex((message) => message.isGone());
+    if (index < 0) return;
+    const gone = this.messages[index];
+    this.messages.slice(0, index).forEach((message) => { message.moveDown(gone.height) });
+    this.messages.splice(index, 1);
   }
 
   newMessage = () => {
@@ -91,7 +102,10 @@ class Chat extends Scene {
       let newMessage = new Message(message, userName, this.toneController.toneColor);
       this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
-      socketService.sendMessage(userName, message, this.toneController.tonePayload(), this.messageHistory);
+      socketService.sendMessage(userName, message, this.toneController.tonePayload(), this.messageHistory, (ack) => {
+        // The server dropped it, so no rewrite will replace the bubble. It fades out instead of waiting forever.
+        if (ack?.delivered === false) newMessage.fadeOut();
+      });
       this.messageInput.value("");
       this.lastMessageAt = performance.now();
     }

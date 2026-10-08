@@ -2,6 +2,7 @@ import hmac
 import os
 import threading
 import time
+import traceback
 import uuid
 from collections import deque
 from typing import Optional
@@ -53,6 +54,11 @@ request_times: dict[str, deque[float]] = {station: deque() for station in STATIO
 # The model always reasons, and its reasoning counts against this cap too, so it leaves plenty of room beyond the reply
 # itself, which is a few hundred tokens at most. Without a cap, one reply could run to the model's 128K-token maximum.
 MAX_COMPLETION_TOKENS = 4000
+
+# The ack that answers a send-message. When it isn't delivered, nothing will replace the sender's bubble, so the client
+# fades it out (P1).
+DELIVERED = {"delivered": True}
+NOT_DELIVERED = {"delivered": False}
 
 
 # SOCKETS
@@ -128,9 +134,9 @@ def on_logout():
 def event_send_message(data):
     new_message = read_message(data)
     if not new_message:
-        return
+        return NOT_DELIVERED
     print(f'new message from: {new_message.user_name} prompt: "{new_message.message}"')
-    respond(
+    return respond(
         request.sid,  # type: ignore
         new_message,
         f'Based on the past conversation, rephrase the message "{new_message.message}" wrote by {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. Do not change the meaning and do not use place holders.',
@@ -142,14 +148,25 @@ def event_send_message(data):
 def event_send_ghost_message(data):
     new_message = read_message(data)
     if not new_message:
-        return
+        return NOT_DELIVERED
     print(f'new ghost message from: {new_message.user_name} prompt: "{new_message.message}"')
-    respond(
+    return respond(
         request.sid,  # type: ignore
         new_message,
         f"Based on the past conversation, generate the next message on behalf of  {new_message.user_name} to sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. The message should be less than 80 characters long. do not use place holders.",
         "new ghost message",
     )
+
+
+@socketio.on_error_default
+def on_error(e):
+    """Logs an exception from any handler. A send-message gets NOT_DELIVERED back, so its bubble fades out (P1)."""
+    traceback.print_exception(e)
+    # Flask-SocketIO answers with this in place of the handler's result. For the handshake only False refuses the
+    # socket, and anything else would let it in without the station key (S10).
+    if request.event["message"] == "connect":  # type: ignore
+        return False
+    return NOT_DELIVERED
 
 
 # ROUTES
@@ -224,11 +241,12 @@ def end_session(session_id: str, event: str, message: str):
         socketio.emit(event, {"message": message}, to=partner.session_id)
 
 
-def respond(session_id: str, new_message: MessageInput, instruction: str, label: str):
-    """Generates the message and the next pair of tones, and sends them to the user's room."""
+def respond(session_id: str, new_message: MessageInput, instruction: str, label: str) -> dict:
+    """Generates the message and the next pair of tones, and sends them to the user's room. Returns the sender's ack."""
     room_id = rooms.get(session_id)
     if not room_id:
-        return
+        print("message dropped, not paired:", session_id)
+        return NOT_DELIVERED
 
     message = parse_completion(
         [
@@ -240,7 +258,7 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
 
     # With no message there's nothing to send, so don't pay for the tones.
     if not message:
-        return
+        return NOT_DELIVERED
     new_message.add_message(message)
 
     tones_response = parse_completion(
@@ -254,28 +272,31 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
         ],
         ToneResponse,
     )
+    if not tones_response:
+        return NOT_DELIVERED
 
     # The pairing may have ended or changed while OpenAI was answering.
     if rooms.get(session_id) != room_id:
-        return
+        print("reply dropped, the pairing changed:", session_id)
+        return NOT_DELIVERED
 
-    if isinstance(message, MessageResponse) and isinstance(tones_response, ToneResponse):
-        print(f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
-        tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
-        current_color = new_message.color
-        socketio.emit(
-            "response-message",
-            {
-                "message": message.message,
-                "userName": new_message.user_name,
-                "prompt": new_message.message,
-                "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
-                "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
-                "color": current_color,
-            },
-            to=room_id,
-        )
-        save_color(current_color)
+    print(f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
+    tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
+    current_color = new_message.color
+    socketio.emit(
+        "response-message",
+        {
+            "message": message.message,
+            "userName": new_message.user_name,
+            "prompt": new_message.message,
+            "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
+            "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
+            "color": current_color,
+        },
+        to=room_id,
+    )
+    save_color(current_color)
+    return DELIVERED
 
 
 def save_color(color):
@@ -305,7 +326,12 @@ def parse_completion(messages: list, response_format):
         # The reply hit MAX_COMPLETION_TOKENS, so it's cut off and can't be parsed.
         print("OpenAI reply dropped, longer than", MAX_COMPLETION_TOKENS, "tokens")
         return None
-    return completion.choices[0].message.parsed  # type: ignore
+    reply = completion.choices[0].message
+    # A refusal comes back as text instead of JSON, and parsed is None.
+    if reply.refusal:
+        print("OpenAI refused:", reply.refusal)
+        return None
+    return reply.parsed  # type: ignore
 
 
 if __name__ == "__main__":

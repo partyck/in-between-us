@@ -1,6 +1,8 @@
 // Messages are measured when they're created, outside draw(), so measuring and drawing both set this style.
 const MESSAGE_FONT = 'Arial';
 const MESSAGE_TEXT_SIZE = 16;
+// How long the bubble of a message the server dropped takes to fade out (P1).
+const MESSAGE_FADE_MS = 6000;
 
 class Message {
 	constructor(content, newUserName, bgColor = c.receivedMessageC, isWaiting = true) {
@@ -41,7 +43,44 @@ class Message {
 		this.y = this.y - (displacement) - 20;
 	}
 
+	// Undoes move(), for when a bubble below this one is removed.
+	moveDown(displacement) {
+		this.y = this.y + displacement + 20;
+	}
+
+	// The server dropped this message. Chat removes the bubble once it has faded out. It stops pulsing first: the pulse
+	// draws 50 stacked layers, which would add up to a solid middle while only the edges faded.
+	fadeOut() {
+		this.waiting = false;
+		this.fadeStartedAt = performance.now();
+	}
+
+	isFading() {
+		return this.fadeStartedAt !== undefined;
+	}
+
+	// Written so that a NaN keeps the bubble: NaN >= anything is false.
+	isGone() {
+		return this.isFading() && performance.now() - this.fadeStartedAt >= MESSAGE_FADE_MS;
+	}
+
+	// 1 until the bubble starts fading, then down to 0 over MESSAGE_FADE_MS.
+	opacity() {
+		if (!this.isFading()) return 1;
+		const elapsed = performance.now() - this.fadeStartedAt;
+		if (!(elapsed >= 0)) return 1;
+		return Math.max(0, 1 - elapsed / MESSAGE_FADE_MS);
+	}
+
 	display() {
+		// globalAlpha fades everything the bubble draws. pop() puts it back, and p5 resyncs its cached fill there.
+		push();
+		drawingContext.globalAlpha = this.opacity();
+		this.drawBubble();
+		pop();
+	}
+
+	drawBubble() {
 		noStroke();
 		const padding = 8;
 		let currentFillColor;
