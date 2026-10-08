@@ -46,11 +46,12 @@ src/
   web/static/stylesheets/index.css
   web/static/manifest.json   PWA manifest
 .devcontainer/     Python 3.11 container with the gcloud CLI. Sets DEBUG=1 and publishes port 8080
+Makefile           run, secrets, station-key, deploy, domain. Every gcloud call uses the in-between-us configuration
 ```
 
 ## Running locally
 
-- `python3 src/main.py`, from any directory. It listens on 0.0.0.0:8080, so the iPads can open `http://<host IP>:8080` on the same network.
+- `make run` from the repo root, or `python3 src/main.py` from any directory. It listens on 0.0.0.0:8080, so the iPads can open `http://<host IP>:8080` on the same network.
 - `src/config.toml` needs `openai_api_key` and `station_key`. The env vars `OPENAI_API_KEY` and `STATION_KEY` win over it. The server won't start without a station key.
 - Firestore uses Application Default Credentials (`gcloud auth application-default login`). A failed color write is only logged as `could not save color`.
 - To test both stations in one browser, open `http://localhost:8080/#station=A&key=<station_key>` and the same with `station=B` in two tabs.
@@ -125,10 +126,12 @@ src/
 
 ## Deployment
 
-- Cloud Run, with the image built from `src/Dockerfile` (`gcloud builds submit src --tag …`).
-- Secrets `OPENAI_API_KEY` and `STATION_KEY` come from Secret Manager.
-- Flags: `--allow-unauthenticated --max-instances=1 --timeout=3600`. Never set `DEBUG` on Cloud Run.
-- The full commands are in [deployment.md](deployment.md). Ask before running any gcloud command that changes cloud resources.
+- Cloud Run service `in-between-us` in `europe-west1`, project `chat-ai-2025`. `make deploy` builds `src/Dockerfile` with Cloud Build (`--source=src`). The region is `europe-west1` because Cloud Run domain mappings don't exist in `europe-central2`, and the plan is a subdomain of `porpatrick.com` (DNS in Cloudflare, `make domain DOMAIN=…`).
+- Every gcloud command in the Makefile uses the gcloud configuration `in-between-us` (the private Google account) and the project `chat-ai-2025`, never the active ones, because on the dev Mac those are a work account (`default`, project `colinewo-staging`). Run manual gcloud commands with `CLOUDSDK_ACTIVE_CONFIG_NAME=in-between-us`.
+- Secrets `openai-api-key` and `station-key` in Secret Manager become `OPENAI_API_KEY` and `STATION_KEY`. `make secrets` creates the station key, `make station-key` prints it.
+- Flags: `--allow-unauthenticated --cpu=1 --memory=512Mi --max-instances=1 --timeout=3600`. Never set `DEBUG` on Cloud Run.
+- The old service `chat-ai1` and the Artifact Registry repository `chat-ai-repo`, both in `europe-central2`, are to be deleted once the iPads work on the new one (deployment.md, "Moving from europe-central2").
+- The full commands are in [deployment.md](deployment.md). Ask before running any gcloud command that changes cloud resources, `make secrets`, `make deploy` and `make domain` included.
 
 ## Git
 

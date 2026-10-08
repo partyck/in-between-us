@@ -1,6 +1,6 @@
 # Deployment
 
-The server runs on Cloud Run as a single instance, from the image built with [src/Dockerfile](src/Dockerfile). The two installations are iPads running the page as a home-screen app, each set up once as station A or B with the station key (see [Setting up the installations](#setting-up-the-installations)).
+The server runs on Cloud Run as a single instance, from the image built with [src/Dockerfile](src/Dockerfile). The service is `in-between-us` in `europe-west1`, in the GCP project `chat-ai-2025`, and the [Makefile](Makefile) deploys it. The two installations are iPads running the page as a home-screen app, each set up once as station A or B with the station key (see [Setting up the installations](#setting-up-the-installations)).
 
 ## Configuration
 
@@ -17,91 +17,94 @@ The server runs on Cloud Run as a single instance, from the image built with [sr
 - With no key from either source, the server fails at startup with OpenAI's "The api_key client option must be set" error.
 - Without a station key, it fails at startup with `STATION_KEY is not set`. Only a page that sends the right station key can open a socket, so without one no installation could connect.
 
-## Values used below
+## The Makefile
 
-Run the commands from the repo root. Set these once per shell:
+Run `make` from the repo root.
+
+| Target | What it does |
+| --- | --- |
+| `make run` | Starts the local server, with the keys from `src/config.toml`. |
+| `make secrets` | Creates the station key in Secret Manager, unless it exists, and checks that the OpenAI key is there. |
+| `make station-key` | Prints the station key, to type on the iPads. |
+| `make deploy` | Builds `src` with Cloud Build and deploys it to Cloud Run. |
+| `make domain DOMAIN=<subdomain>` | Maps a custom subdomain to the service. |
+
+- Every gcloud command in the Makefile uses the gcloud configuration `in-between-us`, which has the authors' private Google account, and the project `chat-ai-2025`. It never uses the active configuration or project, because on the dev Mac those are a work account.
+- The variables at the top can be overridden on the command line, e.g. `make deploy SERVICE=in-between-us-test`.
+- The region is `europe-west1`, because Cloud Run domain mappings only exist in some regions, and `europe-central2`, where the service used to run, isn't one of them. The Firestore database is in `nam5`, which doesn't matter: the color is written after the reply is sent.
+
+For the gcloud commands in the rest of this file, set these once per shell. `CLOUDSDK_ACTIVE_CONFIG_NAME` makes gcloud use the configuration in this shell only.
 
 ```bash
-PROJECT_ID=<project id>
-REGION=<region, e.g. europe-west1>
-SERVICE=<Cloud Run service name>
-REPO=<Artifact Registry repository>
-IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/in-between-us
-gcloud config set project $PROJECT_ID
-SA=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')-compute@developer.gserviceaccount.com
+export CLOUDSDK_ACTIVE_CONFIG_NAME=in-between-us
+SERVICE=in-between-us
+REGION=europe-west1
 ```
-
-`SA` is the default compute service account, which Cloud Run uses unless the service has its own. To check, run `gcloud run services describe $SERVICE --region $REGION --format='value(spec.template.spec.serviceAccountName)'`. If it prints a different account, use that one.
 
 ## One-time setup
 
-1. Enable the APIs:
+1. Create the gcloud configuration, sign in with the private Google account, and set the project. Creating a configuration makes it the active one. `gcloud config configurations activate default` switches back.
+
+   ```bash
+   gcloud config configurations create in-between-us
+   gcloud auth login
+   gcloud config set project chat-ai-2025
+   ```
+
+2. Enable the APIs. They're already enabled in `chat-ai-2025`.
 
    ```bash
    gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com secretmanager.googleapis.com
    ```
 
-2. Create the Artifact Registry repository, unless it exists:
-
-   ```bash
-   gcloud artifacts repositories create $REPO --repository-format=docker --location=$REGION
-   ```
-
-3. Store the OpenAI key in Secret Manager, and let the service account read it. Paste the key at the prompt: it isn't echoed and stays out of the shell history. `printf '%s'` matters, because a trailing newline would become part of the key.
+3. Store the OpenAI key in Secret Manager as `openai-api-key`. Paste the key at the prompt: it isn't echoed and stays out of the shell history. `printf '%s'` matters, because a trailing newline would become part of the key.
 
    ```bash
    read -rs OPENAI_KEY; printf '%s' "$OPENAI_KEY" | gcloud secrets create openai-api-key --data-file=-; unset OPENAI_KEY
-   gcloud secrets add-iam-policy-binding openai-api-key --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
    ```
 
-4. Create the station key, which the two installations send to be let in. It's typed on each iPad, so this makes a short hex one: 16 characters, which is still far too many to guess over the network.
+4. Create the station key, which the two installations send to be let in. It's typed on each iPad, so `make secrets` makes a short hex one: 16 characters, which is still far too many to guess over the network.
 
    ```bash
-   openssl rand -hex 8 | tr -d '\n' | gcloud secrets create station-key --data-file=-
-   gcloud secrets add-iam-policy-binding station-key --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+   make secrets
    ```
 
-5. Give the service account Firestore access. The server writes the sender's slider color to `color/color` on every message. The default compute account often has Editor, which already covers this.
+5. Check that the service account can read the secrets and write to Firestore. The service runs as the default compute service account. In `chat-ai-2025` it has Secret Manager Secret Accessor on the whole project, and Editor, which covers Firestore. In a project where it doesn't, grant the roles:
 
    ```bash
-   gcloud projects add-iam-policy-binding $PROJECT_ID --member=serviceAccount:$SA --role=roles/datastore.user
+   SA=$(gcloud projects describe chat-ai-2025 --format='value(projectNumber)')-compute@developer.gserviceaccount.com
+   gcloud projects add-iam-policy-binding chat-ai-2025 --member=serviceAccount:$SA --role=roles/secretmanager.secretAccessor
+   gcloud projects add-iam-policy-binding chat-ai-2025 --member=serviceAccount:$SA --role=roles/datastore.user
    ```
 
-   A failed write doesn't stop the chat. It's only logged, as `could not save color`.
+   The server writes the sender's slider color to `color/color` on every message. A failed write doesn't stop the chat. It's only logged, as `could not save color`.
 
 6. Set a budget limit on the OpenAI project, in the OpenAI dashboard. The server holds each station to 20 messages a minute, at two OpenAI calls each, but only the budget limit caps the total.
 
 ## Deploy
 
-1. Build the image with Cloud Build. `src` is the build context, and `.gcloudignore` decides what's uploaded. Commit first, so the tag matches the code.
+1. Deploy:
 
    ```bash
-   TAG=$(git rev-parse --short HEAD)
-   gcloud builds submit src --tag $IMAGE:$TAG
+   make deploy
    ```
 
-2. Deploy it:
+   It uploads `src` as it is in the working tree, uncommitted changes included. `.gcloudignore` decides what's left out. Cloud Build builds the Dockerfile and stores the image in the Artifact Registry repository `cloud-run-source-deploy`. On the first deploy, gcloud asks to create that repository in `europe-west1`.
 
-   ```bash
-   gcloud run deploy $SERVICE --image $IMAGE:$TAG --region $REGION \
-     --allow-unauthenticated \
-     --max-instances=1 \
-     --timeout=3600 \
-     --set-secrets=OPENAI_API_KEY=openai-api-key:latest,STATION_KEY=station-key:latest
-   ```
-
-   Cloud Run keeps these settings on the service, so once they're set, later deploys only need `--image` and `--region`. Never add `DEBUG` to the service's environment variables.
-
-   If the service was deployed before the station key existed (S8 in [todo.md](todo.md)), add it on the first deploy after that change with `--update-secrets=STATION_KEY=station-key:latest`. `--set-secrets` replaces the service's whole secret list. Without the key, the new revision fails to start.
+   Every deploy sets all of these flags again, so the service always has them. Never add `DEBUG` to the service's environment variables.
 
    | Flag | Why |
    | --- | --- |
+   | `--source=src` | Builds the image with Cloud Build, from [src/Dockerfile](src/Dockerfile). |
    | `--allow-unauthenticated` | The installations open the URL without signing in. |
+   | `--cpu=1 --memory=512Mi` | Below 1 vCPU, Cloud Run allows only one request per instance at a time, and each installation keeps a WebSocket open. |
    | `--max-instances=1` | Pairing state is in memory. A second instance has its own waiting slot and can leave the installations unable to reach each other (D5 in [todo.md](todo.md)). |
    | `--timeout=3600` | Cloud Run closes WebSockets at the request timeout, 5 minutes by default, which clears the chat. 60 minutes is the maximum (D2). |
    | `--set-secrets` | Sets `OPENAI_API_KEY` and `STATION_KEY` from Secret Manager. `latest` is read when an instance starts. |
 
-3. Check it:
+   There's no `--min-instances`. With nobody connected, the service scales to zero, and the next page load waits for the server to start.
+
+2. Check it:
 
    ```bash
    URL=$(gcloud run services describe $SERVICE --region $REGION --format='value(status.url)')
@@ -111,18 +114,68 @@ SA=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')-compu
 
    Then check that the two installations pair. Pairing state lives in memory, so a deploy ends any chat in progress, and the installations log in again when they reconnect. Opening `$URL/` in any other browser should show the "Set up this installation" screen.
 
-If the new revision fails to start, for example because the secret is missing or the service account can't read it, Cloud Run keeps serving the previous revision. The error is in the service's logs.
+If the new revision fails to start, for example because a secret is missing or the service account can't read it, Cloud Run keeps serving the previous revision. The error is in the service's logs.
+
+## Custom domain
+
+1. Map the subdomain to the service:
+
+   ```bash
+   make domain DOMAIN=<subdomain>.porpatrick.com
+   ```
+
+   Domain mappings are still a beta command in gcloud. `porpatrick.com` is verified for the private Google account. A domain under another parent needs `gcloud domains verify <domain>` first.
+
+2. gcloud prints the DNS record to add, a `CNAME` to `ghs.googlehosted.com.`. Add it in Cloudflare as DNS only (the grey cloud), not proxied. Google only issues the certificate once the name points to its servers.
+3. Wait for the certificate. It takes from a few minutes up to a day. This shows its state:
+
+   ```bash
+   gcloud beta run domain-mappings describe --domain=<subdomain>.porpatrick.com --region=$REGION
+   ```
+
+The run.app URL keeps working alongside the domain.
+
+## Moving from europe-central2 (one time)
+
+The service used to be `chat-ai1` in `europe-central2`. It was deployed from images that `gcloud builds submit` pushed to the Artifact Registry repository `chat-ai-repo`, also in `europe-central2`. Cloud Run can't move a service to another region, so `in-between-us` in `europe-west1` is a new service.
+
+1. Run `make secrets` and `make deploy`, then set up the [custom domain](#custom-domain).
+2. Set up both iPads again from the custom domain (see [Setting up the installations](#setting-up-the-installations)). Each address has its own storage, so the station saved for the old URL doesn't carry over, and a home-screen app added from the old URL keeps opening the old service. Remove those apps from the home screen.
+3. Once the iPads pair on the new service, delete the old service and the old repository:
+
+   ```bash
+   gcloud run services delete chat-ai1 --region=europe-central2
+   gcloud artifacts repositories delete chat-ai-repo --location=europe-central2
+   ```
+
+   The repository holds about 9 GB of images, and the ones built before the S3 fix contain the OpenAI key (see the next section).
+
+## Cleaning up after the S3 fix (one time)
+
+Until S3 was fixed, `config.toml` was copied into every image, and `gcloud builds submit` uploaded it to Cloud Build. Anyone who can pull those images or read that bucket can read the key.
+
+1. Rotate the OpenAI key, as below. This is the step that matters: it makes the old copies useless.
+2. Delete the old images. They're all in `chat-ai-repo`, which step 3 of the move deletes.
+3. Delete the old Cloud Build source archives:
+
+   ```bash
+   gcloud storage ls gs://chat-ai-2025_cloudbuild/source/
+   gcloud storage rm "gs://chat-ai-2025_cloudbuild/source/*"
+   ```
+
+Revisions that used the deleted images can't be rolled back to afterwards. They would use the revoked key anyway.
 
 ## Setting up the installations
 
-Get the station key with `gcloud secrets versions access latest --secret=station-key`. Then, on each iPad:
+Get the station key with `make station-key`. Then, on each iPad:
 
-1. Open the service URL in Safari, and add it to the home screen (Share, then Add to Home Screen).
+1. Open the custom domain in Safari, and add it to the home screen (Share, then Add to Home Screen).
 2. Open the app from the home screen. It shows "Set up this installation".
 3. Choose `A` on one iPad and `B` on the other, type the key, and press ok. Once the server accepts them, the app goes to the home screen.
 
 - Do step 3 inside the home-screen app, not in Safari. iOS keeps the app's storage separate from Safari's, so a setup done in Safari doesn't carry over.
 - The station and key are saved in the app's `localStorage`, so it only has to be done once. Removing the app from the home screen deletes them.
+- The storage belongs to the address the app was added from. An app added from the run.app URL and one added from the custom domain are set up separately, so add the apps once the domain works.
 - The server only pairs station A with station B. If it refuses the station or key, the app goes back to the setup screen with "The server refused this station or key."
 - If both iPads are set up as the same station, the one that connected last takes it. The other shows "This installation was opened on another screen." with two buttons: "Use this screen" takes the station back, and "Change station" goes back to setup. That screen doesn't reload by itself, so two screens set up as the same station don't keep taking it from each other.
 - There's no way back to setup while the app works normally, so a visitor can't reach it. To change a working iPad's station, remove the app from the home screen and add it again.
@@ -160,29 +213,8 @@ Rotate it if the key leaks.
    gcloud run services update $SERVICE --region $REGION --update-secrets=STATION_KEY=station-key:latest
    ```
 
-2. The new revision refuses the old key, so both iPads go back to the setup screen when they reconnect. Choose their station again and type the new key.
+2. The new revision refuses the old key, so both iPads go back to the setup screen when they reconnect. Choose their station again and type the new key, from `make station-key`.
 3. Disable the old version, as for the OpenAI key.
-
-## Cleaning up after the S3 fix (one time)
-
-Until S3 was fixed, `config.toml` was copied into every image, and `gcloud builds submit` uploaded it to Cloud Build. Anyone who can pull those images or read that bucket can read the key.
-
-1. Rotate the OpenAI key, as above. This is the step that matters: it makes the old copies useless.
-2. Once the new revision is serving, delete the old images, wherever they were pushed. For Artifact Registry:
-
-   ```bash
-   gcloud artifacts docker images list $IMAGE --include-tags
-   gcloud artifacts docker images delete $IMAGE@<digest> --delete-tags
-   ```
-
-3. Delete the old Cloud Build source archives:
-
-   ```bash
-   gcloud storage ls gs://${PROJECT_ID}_cloudbuild/source/
-   gcloud storage rm "gs://${PROJECT_ID}_cloudbuild/source/*"
-   ```
-
-Revisions that used the deleted images can't be rolled back to afterwards. They would use the revoked key anyway.
 
 ## Local development
 
@@ -197,7 +229,7 @@ Revisions that used the deleted images can't be rolled back to afterwards. They 
 - Open the two stations in two tabs, e.g. `http://localhost:8080/#station=A&key=dev` and `http://localhost:8080/#station=B&key=dev`. On devices, set them up on the setup screen instead.
 
 - Firestore uses your Application Default Credentials (`gcloud auth application-default login`). The dev container links `~/.config/gcloud` to `~/.devcontainer-shared/gcloud-config` on the host, so the login survives rebuilds. When the credentials expire, color writes fail and are logged.
-- Start the server with `python3 src/main.py`, from any directory. Port 8080 is published on all of your machine's network interfaces, so the installation devices can open `http://<your machine's IP>:8080` on the same network.
+- Start the server with `make run` from the repo root, or `python3 src/main.py` from any directory. Port 8080 is published on all of your machine's network interfaces, so the installation devices can open `http://<your machine's IP>:8080` on the same network.
 
 ## Not handled yet
 

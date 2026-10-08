@@ -18,7 +18,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
   Fix: have the server include a sender id (session id or station) in `room` and `response-message`, and compare that instead.
 
 - [ ] **D5. Check that the server runs as a single instance.** Pairing state is in memory, so a second instance has its own waiting slot and can leave the two installations unable to reach each other (see the README).
-  Fix: deploy to Cloud Run with `--max-instances=1`. Deploys keep the setting, so this only has to be set once. Also see D2.
+  Fix: deploy to Cloud Run with `--max-instances=1`. `make deploy` ([Makefile](Makefile)) sets it, but the live service, `chat-ai1` in `europe-central2`, still has the default of 100. Move this to Done once the new service in `europe-west1` is deployed. Also see D2.
 
 ## Medium
 
@@ -56,7 +56,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
   Fix: build on `python:3.11-slim` with a non-root `USER`, trim the requirements to what's imported, and run `pip-audit`.
 
 - [ ] **D2. Chats are cut off at Cloud Run's request timeout.** Cloud Run closes WebSocket connections at the service's request timeout (5 minutes by default). The socket is opened at page load, so a chat that crosses that point reconnects: both sides return to Waiting and the conversation is cleared.
-  Fix: deploy with `--timeout=3600`, the maximum (60 minutes), alongside `--max-instances=1` (D5).
+  Fix: deploy with `--timeout=3600`, the maximum (60 minutes), alongside `--max-instances=1` (D5). `make deploy` sets both. The live service still has 300 s.
 
 ## Low
 
@@ -117,7 +117,7 @@ Each item has an ID that stays the same when it moves: **S** security, **P** soc
   Fix: add a `/health` endpoint, and log or expose how many sockets are connected.
 
 - [ ] **D6. Open connections can use up the server's request slots.** By default Cloud Run sends an instance at most 80 requests at a time, and with `--max-instances=1` there's only one instance. Each WebSocket holds a slot for as long as it's open, and the connection is accepted before the station key is checked. So anyone with the URL could open enough connections to keep the installations out.
-  Fix: add `--concurrency=1000`, Cloud Run's maximum, to the deploy command and the flag table in [deployment.md](deployment.md#deploy). That raises the bar a long way, but doesn't remove it.
+  Fix: add `--concurrency=1000`, Cloud Run's maximum, to `deploy` in the [Makefile](Makefile) and the flag table in [deployment.md](deployment.md#deploy). That raises the bar a long way, but doesn't remove it.
 
 ## Dev environment
 
