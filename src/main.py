@@ -84,9 +84,11 @@ def on_connect(auth):
 
 
 @socketio.on("disconnect")
-def on_disconnect():
+def on_disconnect(reason=None):
+    # Flask-SocketIO passes the reason ("client disconnect", "ping timeout"…). Without the parameter the call raises a
+    # TypeError, which on_error swallows, so the session would never end.
     session_id = request.sid  # type: ignore
-    print("on_disconnect", session_id)
+    print("on_disconnect", session_id, reason)
     with pairing_lock:
         station = stations.pop(session_id, None)
         if station and station_sessions.get(station) == session_id:
@@ -244,6 +246,7 @@ def end_session(session_id: str, event: str, message: str):
 def respond(session_id: str, new_message: MessageInput, instruction: str, label: str) -> dict:
     """Generates the message and the next pair of tones, and sends them to the user's room. Returns the sender's ack."""
     room_id = rooms.get(session_id)
+    station = stations.get(session_id)
     if not room_id:
         print("message dropped, not paired:", session_id)
         return NOT_DELIVERED
@@ -288,6 +291,9 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
         {
             "message": message.message,
             "userName": new_message.user_name,
+            # Both visitors can type the same name, so the clients tell whose message it is by station (P8). Only A
+            # pairs with B, so the station names one side of the room.
+            "station": station,
             "prompt": new_message.message,
             "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
             "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},

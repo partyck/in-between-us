@@ -1,6 +1,6 @@
 # Deployment
 
-The server runs on Cloud Run as a single instance, from the image built with [src/Dockerfile](src/Dockerfile). The service is `in-between-us` in `europe-west1`, in the GCP project `chat-ai-2025`, and the [Makefile](Makefile) deploys it. The two installations are iPads running the page as a home-screen app, each set up once as station A or B with the station key (see [Setting up the installations](#setting-up-the-installations)).
+The server runs on Cloud Run as a single instance, from the image built with [src/Dockerfile](src/Dockerfile): `python:3.11-slim` with the packages pinned in [requirements.txt](src/requirements.txt) (see [Updating dependencies](#updating-dependencies)), running the server as an unprivileged user. The service is `in-between-us` in `europe-west1`, in the GCP project `chat-ai-2025`, and the [Makefile](Makefile) deploys it. The two installations are iPads running the page as a home-screen app, each set up once as station A or B with the station key (see [Setting up the installations](#setting-up-the-installations)).
 
 ## Configuration
 
@@ -230,11 +230,36 @@ Rotate it if the key leaks.
 
 - Firestore uses your Application Default Credentials (`gcloud auth application-default login`). The dev container links `~/.config/gcloud` to `~/.devcontainer-shared/gcloud-config` on the host, so the login survives rebuilds. When the credentials expire, color writes fail and are logged.
 - Start the server with `make run` from the repo root, or `python3 src/main.py` from any directory. Port 8080 is published on all of your machine's network interfaces, so the installation devices can open `http://<your machine's IP>:8080` on the same network.
+- The dev container installs [requirements.txt](src/requirements.txt) when it's created. After the requirements change, run `pip3 install --user -r src/requirements.txt` in it, or rebuild it.
+
+## Updating dependencies
+
+[requirements.in](src/requirements.in) lists the packages the code imports. [requirements.txt](src/requirements.txt) is generated from it with pip-compile. It pins every package the image installs, and notes which package needs each one. Change requirements.in, never requirements.txt by hand.
+
+Run pip-compile on Python 3.11, like the image, because it resolves for the Python it runs on. In the dev container:
+
+```bash
+pip3 install --user pip-tools pip-audit
+cd src
+pip-compile --strip-extras --no-emit-index-url requirements.in             # after changing requirements.in
+pip-compile --strip-extras --no-emit-index-url --upgrade requirements.in   # or: every package to its newest allowed version
+pip-audit --no-deps --disable-pip -r requirements.txt                      # known advisories
+```
+
+On the Mac, without the dev container, the same commands run in Docker:
+
+```bash
+docker run --rm -v "$PWD/src:/src" -w /src python:3.11-slim sh -c 'pip install -q pip-tools pip-audit && pip-compile --strip-extras --no-emit-index-url requirements.in && pip-audit --no-deps --disable-pip -r requirements.txt'
+```
+
+- Run pip-audit now and then, not only after a change: advisories are published against versions that are already pinned. `pip-compile --upgrade-package <name> …` moves only the packages it names.
+- `openai` and `pydantic` are pinned in requirements.in at the versions the prompts were tried with. Upgrade them on purpose, and send a few messages through OpenAI afterwards.
+- After an upgrade, test both stations locally and read the server log. [`on_error`](src/main.py#L163-L171) catches every exception in a handler, so a library that calls a handler differently only shows up there as a traceback. That's how Flask-SocketIO's new `disconnect` argument was caught (D1 in [todo.md](todo.md)).
+- eventlet prints an `EventletDeprecationWarning` at startup. That's expected (A2).
 
 ## Not handled yet
 
 These are open in [todo.md](todo.md):
 
-- **D1:** the image is built on the dev container image, runs as root, and installs packages nothing uses.
 - **D4:** there's no health check, so nobody notices when a kiosk's browser crashes.
 - **D6:** the service keeps Cloud Run's default of 80 requests at a time, and each open WebSocket holds one, so enough idle connections can keep the iPads out.

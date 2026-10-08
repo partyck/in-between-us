@@ -5,17 +5,19 @@ const MESSAGE_TEXT_SIZE = 16;
 const MESSAGE_FADE_MS = 6000;
 
 class Message {
-	constructor(content, newUserName, bgColor = c.receivedMessageC, isWaiting = true) {
+	// `station` is the sender's. It decides the side, since both visitors can have the same name (P8).
+	constructor(content, newUserName, station, bgColor = c.receivedMessageC, isWaiting = true) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
 		this.MAX_MESSAGE_HEIGHT = height - 100 - height * 0.05 - 30;
 		this.content = content;
 		this.userName = newUserName;
+		this.station = station;
 		this.calculateTextWidthAndHeight();
 		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.animation_s = 80;
 		this.bgColor = bgColor;
 
-		if (this.userName === userName) {
+		if (this.station === socketService.station) {
 			this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 			this.strokeColor = color(255);
 			this.waiting = isWaiting;

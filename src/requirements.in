@@ -1,0 +1,9 @@
+# What main.py, config.py and models.py import. requirements.txt pins these and everything they need, and is generated
+# from this file with pip-compile (see deployment.md, "Updating dependencies").
+eventlet
+firebase-admin
+Flask
+Flask-SocketIO
+# Kept where the prompts and structured outputs were last tried against OpenAI.
+openai==1.60.0
+pydantic==2.10.5

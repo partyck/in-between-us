@@ -19,7 +19,7 @@ class Waiting extends Scene {
   }
 
   onRoom(room) {
-    if (room.userA.userName === userName) {
+    if (room.userA.station === socketService.station) {
       recipientName = room.userB.userName;
     }
     else {

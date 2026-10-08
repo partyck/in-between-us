@@ -13,6 +13,12 @@ class SocketService {
     this.socket.connect();
   }
 
+  // The station this screen connected as. `room` and `response-message` carry the station of each user, and that's
+  // how the client tells its own messages from the partner's: both visitors can type the same name (P8).
+  get station() {
+    return this.socket.auth?.station;
+  }
+
   listenSockets() {
     // Events go to the current scene, and scenes that don't handle one ignore it.
     this.socket.on('connect', () => {

@@ -13,7 +13,7 @@ Context for Claude Code sessions in this repo. The longer docs are linked below.
 
 "In between us." is an art installation. Two iPads, **station A** and **station B**, run the same web page as a home-screen app (PWA). A visitor types a name and is paired with the visitor at the other iPad, and they chat. The server rewrites every message with OpenAI in the tone the sender picked on a slider (e.g. Formal ↔ Informal). The partner only sees the rewritten text. After each message, OpenAI picks the next pair of opposite tones for both sliders. If a visitor stays silent for 30–45 s, the AI writes a "ghost message" on their behalf.
 
-**Stack.** Python 3.11, Flask 2.2, Flask-SocketIO 5.3 (python-socketio 5.7) in eventlet mode, OpenAI SDK 1.60 structured outputs, firebase-admin (Firestore). The client is plain JS with p5.js 1.6 in global mode, p5.sound 1.0.1 and the Socket.IO 4.6.1 client, all vendored in `src/web/static/js/lib/`. There's no build step and no npm. It's deployed on Google Cloud Run as a single instance.
+**Stack.** Python 3.11, Flask 3.1, Flask-SocketIO 5.6 (python-socketio 5.17) in eventlet 0.41 mode, OpenAI SDK 1.60 structured outputs, firebase-admin 7.7 (Firestore). Every Python package is pinned in `src/requirements.txt`, which pip-compile generates from `src/requirements.in`. The client is plain JS with p5.js 1.6 in global mode, p5.sound 1.0.1 and the Socket.IO 4.6.1 client, all vendored in `src/web/static/js/lib/`. There's no build step and no npm. It's deployed on Google Cloud Run as a single instance.
 
 ## Docs
 
@@ -26,7 +26,7 @@ Context for Claude Code sessions in this repo. The longer docs are linked below.
 
 Conventions:
 
-- todo.md IDs never change: **S** security, **P** sockets/protocol, **A** server architecture, **F** frontend, **D** deployment. Priorities right now: A3 (server-side history with message ids, which fixes P2, P3, P8, P10, S5, F5).
+- todo.md IDs never change: **S** security, **P** sockets/protocol, **A** server architecture, **F** frontend, **D** deployment. Priorities right now: A3 (server-side history with message ids, which fixes P2, P3, P10, S5, F5).
 - When you fix an item, move it to Done under the same ID, say what changed and why with file links, and write "Not committed yet". Once the user has committed it, a later session replaces that with "Fixed in `<hash>`" (check `git log`). Bugs fixed without an ID go in a "Fixed in `<hash>` (<commit message>):" list at the end of Done.
 - A behaviour change updates README, architecture.md and deployment.md in the same change. Past fixes touched code, docs and todo.md together.
 - Style: plain, short, declarative sentences that explain why. Links are relative markdown links with `#L` line anchors. The anchors drift, so refresh the ones near what you change.
@@ -40,7 +40,9 @@ src/
   models.py        Dataclasses for payloads (User, Room, MessageInput…), Pydantic models for OpenAI outputs
   utils/json.py    snake_case <-> camelCase for payloads
   config.toml      Local secrets only. Gitignored, never in the image
-  Dockerfile, .dockerignore, .gcloudignore, requirements.txt
+  Dockerfile       python:3.11-slim, runs as the unprivileged user app
+  requirements.in  What the code imports. requirements.txt is generated from it by pip-compile, never edited by hand
+  .dockerignore, .gcloudignore, requirements.txt
   web/templates/index.html   The only page: one <section id="<name>-scene"> per scene, then the script tags
   web/static/js/             One file per scene, plus main.js, scene.js, sockets.js, message.js, tone.js, constants.js, sounds.js
   web/static/stylesheets/index.css
@@ -57,6 +59,8 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
 - To test both stations in one browser, open `http://localhost:8080/#station=A&key=<station_key>` and the same with `station=B` in two tabs.
 - `DEBUG=1` (set by the dev container) turns on the reloader, request logs and template reloading. Never pass `debug=True` to `socketio.run`: in eventlet mode it serves Werkzeug's Python console at `/console`.
 - There are no tests. Available here: python3, pytest, black, pylint, gcloud. Not available: node or any JS runtime. `python3 -m py_compile src/*.py` is a quick syntax check.
+- Sessions on the Mac, outside the dev container, have Docker. They can build `src/Dockerfile` and run the image, with OpenAI faked through `OPENAI_BASE_URL`. D1 was tested that way.
+- Dependencies: change `src/requirements.in`, then regenerate `requirements.txt` and run pip-audit, on Python 3.11 (deployment.md, "Updating dependencies").
 - Formatting (from devcontainer.json): black with line length 120, isort with the black profile, 2-space indent in JS and JSON. Code comments are full sentences that explain why.
 
 ## Server rules
@@ -79,12 +83,14 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
   - Every drop answers the sender's ack with `NOT_DELIVERED` (see the next bullet).
 - **Acks and errors (P1, S10).** The `send-message` and `send-ghost-message` handlers return `DELIVERED` or `NOT_DELIVERED`, which Socket.IO sends back as the ack. Only the ack for `send-message` is used, by the client. Any way out of `respond()` that doesn't emit `response-message` must return `NOT_DELIVERED`, or the bubble waits forever.
   - `on_error` (`@socketio.on_error_default`) logs the traceback and returns `NOT_DELIVERED`, and `False` when `request.event["message"]` is `connect`. Flask-SocketIO uses the error handler's return value in place of the handler's, so for the handshake anything but `False` would let a socket in without the station key. Keep that check.
+  - `on_error` also catches a `TypeError` from a handler that Flask-SocketIO calls with arguments it doesn't take, and the handler then silently does nothing. That's why `on_disconnect` takes `reason` (D1). After upgrading Flask-SocketIO or python-socketio, read the server log for tracebacks.
 - **Fixes not to undo:**
   - S1: visitor text goes into the DOM only through `textContent`, never p5's `.html()`.
   - S2: no Werkzeug debugger.
   - S3: `config.toml` and `.env` are left out by both `.dockerignore` and `.gcloudignore`. Keep the two files in sync.
   - S8: only sockets with the station key can connect.
   - S10: an exception in `on_connect` refuses the socket, through `on_error` returning `False`.
+  - D1: the image runs as the user `app`, and sets `PYTHONUNBUFFERED=1` so `print` output reaches Cloud Run's logs straight away.
 
 ## Client
 
@@ -99,7 +105,8 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
   4. Create it in `init()`.
 - **Adding a socket event:** add the handler in main.py and a listener in `SocketService.listenSockets` that calls a `currentScene.onX?.()` hook. Update the event tables in README.md and architecture.md §4.
 - The station and key are saved in `localStorage` under the key `station`. A `#station=…&key=…` URL fragment overrides them.
-- The client identifies its own messages by display name (`data.userName === userName`) and matches pending bubbles by text (`content === prompt`). Both are known flaws (P8, P2). A bubble that's fading out is skipped by both the matching and `messageHistory`.
+- **Whose message (P8).** The client tells its own messages from the partner's by station, never by display name, since both visitors can type the same name. `room` carries each user's station, `response-message` carries the sender's (set by the server from the socket), and `socketService.station` is the one this screen connected as. Only A pairs with B, so a station names one side of the room. `Message` takes the sender's station as its third argument and picks its side from it.
+- Pending bubbles are still matched by text (`content === prompt`), a known flaw (P2). A bubble that's fading out is skipped by both the matching and `messageHistory`.
 - **Failed messages (P1).** `sendMessage` takes an `onAck` callback. When the ack is `{delivered: false}`, Chat calls `fadeOut()` on that exact bubble. It stops pulsing (the pulse's 50 stacked layers would hide a fade), fades with `drawingContext.globalAlpha` inside `push()`/`pop()` over `MESSAGE_FADE_MS` (6000), and `Chat.removeFadedMessage` then removes it and moves the older bubbles down. p5's `pop()` resyncs its cached fill, so `globalAlpha` doesn't leak into other bubbles.
 
 ## iPad and Safari lessons
