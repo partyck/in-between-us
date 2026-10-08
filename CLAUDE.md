@@ -137,12 +137,12 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
 - Every gcloud command in the Makefile uses the gcloud configuration `in-between-us` (the private Google account) and the project `chat-ai-2025`, never the active ones, because on the dev Mac those are a work account (`default`, project `colinewo-staging`). Run manual gcloud commands with `CLOUDSDK_ACTIVE_CONFIG_NAME=in-between-us`.
 - Secrets `openai-api-key` and `station-key` in Secret Manager become `OPENAI_API_KEY` and `STATION_KEY`. `make secrets` creates the station key, `make station-key` prints it.
 - Flags: `--allow-unauthenticated --cpu=1 --memory=512Mi --max-instances=1 --timeout=3600`. Never set `DEBUG` on Cloud Run.
-- The old service `chat-ai1` and the Artifact Registry repository `chat-ai-repo`, both in `europe-central2`, are to be deleted once the iPads work on the new one (deployment.md, "Moving from europe-central2").
+- The old service `chat-ai1` and the Artifact Registry repository `chat-ai-repo`, both in `europe-central2`, were deleted on 2026-10-08, with the old Cloud Build uploads. The OpenAI key that had leaked into them (S3) was revoked and replaced.
 - The full commands are in [deployment.md](deployment.md). Ask before running any gcloud command that changes cloud resources, `make secrets`, `make deploy` and `make domain` included.
 
 ## Git
 
-- `wip` is the working branch, 23 commits ahead of `main`. `origin/slovenia` and `origin/stand-by` are older branches from 2025. The tip of `slovenia` was merged into `wip` in 8824748.
+- `wip` is the working branch, 27 commits ahead of `main`. `origin/slovenia` and `origin/stand-by` are older branches from 2025. The tip of `slovenia` was merged into `wip` in 8824748.
 - The user writes short, lowercase commit messages ("fix frozen ipad", "home animation").
 - `git push` doesn't work inside the dev container. The remote is `git@github.com-personal:partyck/in-between-us.git`, and that SSH alias only exists on the host, so push from the host.
 

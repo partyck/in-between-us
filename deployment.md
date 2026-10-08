@@ -135,35 +135,11 @@ If the new revision fails to start, for example because a secret is missing or t
 
 The run.app URL keeps working alongside the domain.
 
-## Moving from europe-central2 (one time)
+## Earlier setup (removed)
 
-The service used to be `chat-ai1` in `europe-central2`. It was deployed from images that `gcloud builds submit` pushed to the Artifact Registry repository `chat-ai-repo`, also in `europe-central2`. Cloud Run can't move a service to another region, so `in-between-us` in `europe-west1` is a new service.
+Until 2026-10-08 the service was `chat-ai1` in `europe-central2`, deployed from images that `gcloud builds submit` pushed to the Artifact Registry repository `chat-ai-repo`. Cloud Run can't move a service to another region, so `in-between-us` in `europe-west1` is a new service. Once it ran, the old service, the repository and the old Cloud Build uploads in `gs://chat-ai-2025_cloudbuild/source/` were deleted on 2026-10-08.
 
-1. Run `make secrets` and `make deploy`, then set up the [custom domain](#custom-domain).
-2. Set up both iPads again from the custom domain (see [Setting up the installations](#setting-up-the-installations)). Each address has its own storage, so the station saved for the old URL doesn't carry over, and a home-screen app added from the old URL keeps opening the old service. Remove those apps from the home screen.
-3. Once the iPads pair on the new service, delete the old service and the old repository:
-
-   ```bash
-   gcloud run services delete chat-ai1 --region=europe-central2
-   gcloud artifacts repositories delete chat-ai-repo --location=europe-central2
-   ```
-
-   The repository holds about 9 GB of images, and the ones built before the S3 fix contain the OpenAI key (see the next section).
-
-## Cleaning up after the S3 fix (one time)
-
-Until S3 was fixed, `config.toml` was copied into every image, and `gcloud builds submit` uploaded it to Cloud Build. Anyone who can pull those images or read that bucket can read the key.
-
-1. Rotate the OpenAI key, as below. This is the step that matters: it makes the old copies useless.
-2. Delete the old images. They're all in `chat-ai-repo`, which step 3 of the move deletes.
-3. Delete the old Cloud Build source archives:
-
-   ```bash
-   gcloud storage ls gs://chat-ai-2025_cloudbuild/source/
-   gcloud storage rm "gs://chat-ai-2025_cloudbuild/source/*"
-   ```
-
-Revisions that used the deleted images can't be rolled back to afterwards. They would use the revoked key anyway.
+The images and uploads made before the S3 fix contained `config.toml`, and the OpenAI key in it. That key was revoked in the OpenAI dashboard on the same day, and `openai-api-key` now holds a new one.
 
 ## Setting up the installations
 
@@ -175,7 +151,7 @@ Get the station key with `make station-key`. Then, on each iPad:
 
 - Do step 3 inside the home-screen app, not in Safari. iOS keeps the app's storage separate from Safari's, so a setup done in Safari doesn't carry over.
 - The station and key are saved in the app's `localStorage`, so it only has to be done once. Removing the app from the home screen deletes them.
-- The storage belongs to the address the app was added from. An app added from the run.app URL and one added from the custom domain are set up separately, so add the apps once the domain works.
+- The storage belongs to the address the app was added from. An app added from the run.app URL and one added from the custom domain are set up separately, so add the apps once the domain works. Apps added from the old `chat-ai1` URL no longer work: remove them.
 - The server only pairs station A with station B. If it refuses the station or key, the app goes back to the setup screen with "The server refused this station or key."
 - If both iPads are set up as the same station, the one that connected last takes it. The other shows "This installation was opened on another screen." with two buttons: "Use this screen" takes the station back, and "Change station" goes back to setup. That screen doesn't reload by itself, so two screens set up as the same station don't keep taking it from each other.
 - There's no way back to setup while the app works normally, so a visitor can't reach it. To change a working iPad's station, remove the app from the home screen and add it again.
