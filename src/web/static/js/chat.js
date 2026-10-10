@@ -201,7 +201,6 @@ class Chat extends Scene {
     if (!(silence >= this.ghostDelay())) return;
     const startedAt = this.startedAt;
     this.ghostInFlight = true;
-    console.log(this.ghostDelay());
     socketService.sendGhostMessage(userName, this.toneController.tonePayload(), this.ghostHistory, (ack) => {
       if (startedAt !== this.startedAt) return;
       this.ghostInFlight = false;
