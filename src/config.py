@@ -73,7 +73,8 @@ TONES_BY_NAME = {tone.tone_a.name: tone.tone_a for tone in TONES_WC} | {
     tone.tone_b.name: tone.tone_b for tone in TONES_WC
 }
 
-
-TONES_PROMPT = "The possible tones of conversation are: " + "; ".join(
-    [f"{tone.tone_a.name}, {tone.tone_b.name}" for tone in TONES_WC]
-)
+# Each pair of opposite tones under the name OpenAI picks it by, e.g. "Informal / Formal". OpenAI can only answer with
+# one of these names (message_response_format in models.py), so a pair never comes back mixed or misspelled.
+TONE_PAIRS = {f"{pair.tone_a.name} / {pair.tone_b.name}": pair for pair in TONES_WC}
+# Tone name -> the name of its pair, to find the pair a slider shows from the tones a message carries.
+TONE_PAIR_OF = {tone.name: name for name, pair in TONE_PAIRS.items() for tone in (pair.tone_a, pair.tone_b)}

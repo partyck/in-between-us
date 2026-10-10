@@ -1,7 +1,8 @@
 from dataclasses import asdict, dataclass
-from typing import Optional, Self
+from functools import lru_cache
+from typing import Literal, Optional, Self
 
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from utils.json import dict_to_json_convention
 
@@ -77,13 +78,16 @@ class Room:
 
 
 class MessageResponse(BaseModel):
-    user_name: str
     message: str
+    next_tones: str  # the name of a pair in TONE_PAIRS, see message_response_format
 
 
-class ToneResponse(BaseModel):
-    tone_a: str
-    tone_b: str
+@lru_cache
+def message_response_format(pairs: tuple[str, ...]) -> type[MessageResponse]:
+    """A MessageResponse whose next_tones can only be one of `pairs`. Structured outputs enforce it as an enum."""
+    # Structured outputs write the keys in the schema's order, so OpenAI picks the tones after writing the message.
+    # There are only so many sets of pairs, so the cache keeps one model, and one schema for OpenAI to cache, per set.
+    return create_model("MessageResponse", __base__=MessageResponse, next_tones=(Literal[pairs], ...))  # type: ignore
 
 
 @dataclass
@@ -144,9 +148,6 @@ class MessageInput:
 
     def higher_tone_name(self) -> str:
         return self.tone_1.tone if self.tone_1.value > self.tone_2.value else self.tone_2.tone
-
-    def add_message(self, new_message: MessageResponse):
-        self.message_history.append({"name": new_message.user_name, "content": new_message.message})
 
     @classmethod
     def from_json(cls, data: dict) -> Self:

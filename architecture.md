@@ -2,7 +2,7 @@
 
 In Between Us connects two installations. A visitor at each one types a name, is paired with the visitor at the other installation, and they chat. Every message goes through OpenAI and is rewritten in the tone the sender picked on a slider before either side sees it. If a visitor stays silent, the AI writes a message on their behalf.
 
-This document describes the code as of `21ed78e`. Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
+This document describes the code as of `9728ca2`, plus A2 and A4 (not committed yet). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
 
 ## 1. System overview
 
@@ -16,11 +16,9 @@ flowchart LR
     end
     subgraph SRV["Server: one Python process"]
         HTTP["Flask<br/>GET / and static files"]
-        SIO["Flask-SocketIO, eventlet mode<br/>event handlers"]
-        PAIR[("In-memory pairing state<br/>waiting_user, partners, rooms,<br/>stations, station_sessions")]
-        TP["eventlet tpool<br/>real OS threads"]
+        SIO["Flask-SocketIO, threading mode<br/>a thread per connection and per event"]
+        PAIR[("In-memory pairing state<br/>waiting_user, partners, rooms,<br/>stations, station_sessions, room_tones")]
         SIO --- PAIR
-        SIO --> TP
     end
     OAI["OpenAI<br/>gpt-6.1-sol"]
     FS[("Firestore<br/>color/color")]
@@ -29,14 +27,14 @@ flowchart LR
     CB <-->|Socket.IO| SIO
     CA -->|HTTP| HTTP
     CB -->|HTTP| HTTP
-    TP -->|2 calls per message| OAI
+    SIO -->|1 call per message| OAI
     SIO -->|1 write per message| FS
     FS -.-> EXT
 ```
 
 - **Two browser clients.** Each installation is an iPad running the same page as a home-screen app. It's set up once as station A or B with the shared station key, which it keeps in `localStorage`. The socket handshake carries both, and the server refuses any other socket.
-- **One server process.** Flask serves the page and static files. Flask-SocketIO, in eventlet mode, handles the socket events. All pairing state is in memory, so the server must run as a single process on a single instance.
-- **OpenAI.** Each message costs two structured-output calls: one rewrites the text, the other picks the next pair of tones for the slider. The model is set in `parse_completion` ([main.py](src/main.py#L318-L340)).
+- **One server process.** Flask serves the page and static files. Flask-SocketIO, in threading mode, handles the socket events. In the Docker image, gunicorn serves both with one worker and 100 threads. All pairing state is in memory, so the server must run as a single process on a single instance.
+- **OpenAI.** Each message costs one structured-output call, which rewrites the text and picks the next pair of tones for the sliders. The model is set in `parse_completion` ([main.py](src/main.py#L330-L351)).
 - **Firestore.** Only one document is used, `color/color`. It's overwritten with the sender's slider color on every delivered message. Nothing in this repo reads it back, so it may not be needed at all (A7 in [todo.md](todo.md)).
 
 ## 2. Server
@@ -45,7 +43,7 @@ flowchart LR
 | --- | --- |
 | [main.py](src/main.py) | App setup, socket handlers, pairing state, OpenAI and Firestore calls |
 | [models.py](src/models.py) | Dataclasses for socket payloads, Pydantic models for OpenAI structured outputs |
-| [config.py](src/config.py) | Reads the OpenAI key (`OPENAI_API_KEY`, or a local `config.toml`), the station key (`STATION_KEY`) and `DEBUG`, defines the stations, the tone table and the tone prompt |
+| [config.py](src/config.py) | Reads the OpenAI key (`OPENAI_API_KEY`, or a local `config.toml`), the station key (`STATION_KEY`) and `DEBUG`, defines the stations, the tone table and its pairs |
 | [utils/json.py](src/utils/json.py) | snake_case ↔ camelCase conversion for payloads |
 
 ### Pairing state
@@ -56,6 +54,7 @@ partners: dict[str, User]      # session id -> the user they're talking to
 rooms: dict[str, str]          # session id -> Socket.IO room id
 stations: dict[str, str]       # session id -> station, "A" or "B"
 station_sessions: dict[str, str]  # station -> session id of the socket that holds it
+room_tones: dict[str, str]     # room id -> the tone pair both sliders show, once the room has had a reply
 ```
 
 A session is always in one of three states:
@@ -66,41 +65,41 @@ A session is always in one of three states:
 | Waiting | `waiting_user` | `login` while the slot is empty | Someone else logs in, or its own `logout`, disconnect or new `login` |
 | Paired | `partners`, `rooms`, and the Socket.IO room | `login` while someone else is waiting | Its own or its partner's `logout`, disconnect or new `login` |
 
-Rules ([on_connect](src/main.py#L65-L83), [on_login](src/main.py#L99-L125), [end_session](src/main.py#L228-L243)):
+Rules ([on_connect](src/main.py#L70-L88), [on_login](src/main.py#L104-L130), [end_session](src/main.py#L234-L251)):
 
 - A socket is only accepted with `auth: {station, key}`, where the station is `A` or `B` and the key matches `STATION_KEY`. Anything else is refused in the handshake.
 - The newest socket for a station wins. The older one is disconnected, which ends its session like any disconnect.
 - There is one waiting slot. Only the other station can take a user out of it: a login from the same station replaces the waiting user.
 - A `login` first ends whatever the session was doing. If it was paired, the partner gets `userdisconnect`.
 - Pairing creates a fresh room id (`uuid4`), puts both sockets in that Socket.IO room, and emits `room` to it.
-- `end_session` removes both sides from `partners` and `rooms`, takes both out of the room, and sends the given event (`logout` or `userdisconnect`) to the partner.
+- `end_session` removes both sides from `partners` and `rooms`, and the room from `room_tones`, takes both out of the room, and sends the given event (`logout` or `userdisconnect`) to the partner.
 - A restart clears everything. Clients in the Waiting or Chat scene log in again when their socket reconnects.
 
 ### Handling a message
 
-[`respond()`](src/main.py#L246-L305) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
+[`respond()`](src/main.py#L254-L317) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
 
-1. **Limits** ([`read_message`](src/main.py#L188-L213)), which bound OpenAI spend (S4). Each check can drop the message.
-   - **Rate.** Drop the message if the socket has no station, or if its station has sent 20 messages in the last minute ([`within_rate_limit`](src/main.py#L216-L225)). The count is per station, so a reconnect doesn't reset it.
+1. **Limits** ([`read_message`](src/main.py#L193-L218)), which bound OpenAI spend (S4). Each check can drop the message.
+   - **Rate.** Drop the message if the socket has no station, or if its station has sent 20 messages in the last minute ([`within_rate_limit`](src/main.py#L221-L231)). The count is per station, so a reconnect doesn't reset it.
    - **Size.** Drop a message over 500 characters, or one whose tone names aren't in the tone table. Cut the sender's name to 40 characters, and keep the last 10 history entries, each cut to a 40-character name and 1000 characters of text.
 2. Look up the sender's room. If they aren't paired, drop the event.
-3. **OpenAI call 1:** rewrite the message, or write a new one for a ghost message, using the client-supplied history (`MessageResponse`). If there's no message, because OpenAI refused (`refusal` is set) or the reply hit the 4000-token output cap, stop here.
-4. **OpenAI call 2:** pick two tones from the list for the next message (`ToneResponse`).
-5. If the sender's room changed while OpenAI was answering, drop the reply.
+3. **Tones to leave out:** the pair on the sender's slider, and the room's last pair from `room_tones`. They differ when the slider still shows the previous chat's pair (F3 in [todo.md](todo.md)), or when the partner's reply changed it after the visitor pressed send.
+4. **OpenAI call:** rewrite the message, or write a new one for a ghost message, using the client-supplied history, then pick the next pair of tones (`MessageResponse`, [models.py](src/models.py#L80-L90)). `next_tones` is an enum of the pairs' names (`"Informal / Formal"`…) without the ones left out, so OpenAI can only return a valid pair that the sliders don't show. Structured outputs write the keys in order, so the tones are picked after the message is written. If there's no reply, because OpenAI refused (`refusal` is set) or the reply hit the 4000-token output cap, stop here.
+5. Under `pairing_lock`: if the sender's room changed while OpenAI was answering, drop the reply. If the partner's reply brought the same pair in the meantime, take a random other pair from the enum. Store the pair in `room_tones`.
 6. Emit `response-message` to the room, so both clients get it.
 7. Write the sender's slider color to Firestore. A failure is only logged.
 8. Answer the sender's ack with `{delivered: true}`.
 
-Every way out before step 6 answers `{delivered: false}` instead, and the client fades the bubble out (P1). An exception anywhere goes to [`on_error`](src/main.py#L163-L171), the `@socketio.on_error_default` handler. It logs the traceback and answers `{delivered: false}` as well. For the handshake it returns `False`, which refuses the socket. Flask-SocketIO uses the error handler's return value in place of the handler's, so for `connect` anything else would let the socket in without the key (S10).
+Every way out before step 6 answers `{delivered: false}` instead, and the client fades the bubble out (P1). An exception anywhere goes to [`on_error`](src/main.py#L168-L176), the `@socketio.on_error_default` handler. It logs the traceback and answers `{delivered: false}` as well. For the handshake it returns `False`, which refuses the socket. Flask-SocketIO uses the error handler's return value in place of the handler's, so for `connect` anything else would let the socket in without the key (S10).
 
-Both OpenAI calls set `max_completion_tokens` to 4000 ([`parse_completion`](src/main.py#L318-L340)). The model always reasons, and reasoning counts against the cap, so it's set well above what a rewrite needs. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` logs and turns into `None`.
+The OpenAI call sets `max_completion_tokens` to 4000 ([`parse_completion`](src/main.py#L330-L351)). The model always reasons, and reasoning counts against the cap, so it's set well above what a rewrite needs. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` logs and turns into `None`.
 
 ### Concurrency model
 
-- The server runs eventlet **without monkey-patching**, because monkey-patching breaks the gRPC library that Firestore uses. Every handler runs as a green thread on one OS thread, so any blocking call freezes every client.
-- OpenAI calls therefore go through `tpool.execute`, which runs them in a real thread (20 s timeout, one retry). The Firestore write does too (5 s timeout, no retry).
-- `pairing_lock` is a real `threading.Lock`. That's safe only because nothing inside it yields.
-- python-socketio runs each incoming event in its own green thread. Two events from the same client can be processed at the same time and finish in either order.
+- Flask-SocketIO runs in **threading mode** (A2). gunicorn gives each connection a thread from a pool of 100, and python-socketio runs each incoming event in a thread of its own. Two events from the same client can be processed at the same time and finish in either order.
+- OpenAI and Firestore are called directly from the handler. A blocking call only holds up its own thread: OpenAI for up to 20 s, with one retry, and the Firestore write for up to 5 s, with none.
+- A thread can be switched out between any two lines, so shared state only changes under a lock. `pairing_lock` guards the pairing state and `room_tones`, and `request_times_lock` the rate limit's counts. Reads outside them are single dictionary lookups.
+- Nothing inside `pairing_lock` may call a Socket.IO function. `disconnect()` runs the `disconnect` handler in the same thread, which takes the lock again and deadlocks, because a `threading.Lock` isn't reentrant. Emits and room changes happen after the lock is released, which also keeps network writes from holding up other handlers.
 
 ## 3. Client
 
@@ -176,7 +175,7 @@ Any scene can go to Setup or Closed, not only Home. Neither leaves by itself.
 - **Own message.** A bubble with the typed text appears at once, with a pulsing "waiting" style. When `response-message` comes back with the visitor's own station, the bubble whose text equals `prompt` is rewritten in place. If none matches (a ghost message), a new bubble is added on the visitor's side. If the ack says `{delivered: false}`, the bubble stops pulsing, fades out over 6 s (`MESSAGE_FADE_MS`), and is removed. The older bubbles above it move down into its place. A fading bubble is left out of the history and out of reply matching.
 - **Partner's message.** Added as a new bubble, with a sound.
 - **Layout.** Bubbles stack up from the bottom of the chat, newest at the bottom. [`Chat.layout`](src/web/static/js/chat.js#L59-L69) places every bubble again, from its place in the list and its height, whenever a bubble is added, rewritten or removed. A rewrite can come back after the partner's next message, so the bubble it replaces isn't always the newest. It stays where it was sent, and the older bubbles move to fit its new height.
-- **Tones.** Every `response-message` replaces the slider's two tones on both screens.
+- **Tones.** Every `response-message` replaces the slider's two tones on both screens, always with a pair other than the one they showed.
 - **History.** Each event carries up to the last 10 messages, minus the newest one, as `{name, content}`. The server keeps no history of its own, and uses at most the last 10 entries it's sent.
 - **Message length.** The chat input's `maxlength` is the server's `MAX_MESSAGE_LENGTH` (500), which `route_home` passes to the template, so the two can't drift apart. The server drops a longer message, and its bubble fades out.
 - **Ghost timer.** After the partner's message, or from the start of the chat, the client waits 30–45 s, measured with `performance.now()`. If the visitor hasn't sent anything by then, it emits `send-ghost-message`. The delay is chosen once per page load, and the waiting flag carries over from the previous chat (F6 in [todo.md](todo.md)).
@@ -262,14 +261,12 @@ sequenceDiagram
     participant B as Installation B
     A->>A: show pending bubble with the typed text
     A->>S: send-message {userName, message, tone, messageHistory}
-    S->>O: rewrite in the chosen tone (tpool)
-    O-->>S: MessageResponse
-    S->>O: pick the next two tones (tpool)
-    O-->>S: ToneResponse
+    S->>O: rewrite in the chosen tone, then pick the next pair,<br/>not the one the sliders show
+    O-->>S: MessageResponse {message, next_tones}
     Note over S: drop the reply if the pairing changed
     S-->>A: response-message
     S-->>B: response-message
-    S->>F: set color/color to the slider color (tpool)
+    S->>F: set color/color to the slider color
     S-->>A: ack {delivered: true}
     A->>A: rewrite the bubble whose text equals prompt
     B->>B: add partner bubble, play sound

@@ -1,5 +1,6 @@
 import hmac
 import os
+import random
 import threading
 import time
 import traceback
@@ -7,14 +8,13 @@ import uuid
 from collections import deque
 from typing import Optional
 
-from eventlet import tpool
 from firebase_admin import firestore, initialize_app
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, disconnect, join_room, leave_room
 from openai import LengthFinishReasonError, OpenAI
 
-from config import DEBUG, OPENAI_API_KEY, STATION_KEY, STATIONS, TONES_BY_NAME, TONES_PROMPT
-from models import MessageInput, MessageResponse, Room, ToneOptions, ToneResponse, User
+from config import DEBUG, OPENAI_API_KEY, STATION_KEY, STATIONS, TONE_PAIR_OF, TONE_PAIRS, TONES_BY_NAME
+from models import MessageInput, Room, User, message_response_format
 
 if not STATION_KEY:
     raise RuntimeError("STATION_KEY is not set, so no installation could connect. See deployment.md.")
@@ -28,7 +28,9 @@ app.config["TEMPLATES_AUTO_RELOAD"] = DEBUG
 
 
 # Without cors_allowed_origins, only pages served by this server can open a socket.
-socketio = SocketIO(app, async_mode="eventlet")
+# Threading mode runs every connection and every event in a real thread, so a blocking OpenAI or Firestore call only
+# holds up its own handler. Eventlet would need monkey-patching for that, which breaks Firestore's gRPC library (A2).
+socketio = SocketIO(app, async_mode="threading")
 client = OpenAI(api_key=OPENAI_API_KEY, timeout=20, max_retries=1)
 
 # PAIRING
@@ -40,10 +42,11 @@ partners: dict[str, User] = {}  # session id -> the user they are talking to
 rooms: dict[str, str] = {}  # session id -> room id
 stations: dict[str, str] = {}  # session id -> station
 station_sessions: dict[str, str] = {}  # station -> session id of the socket that holds it
+room_tones: dict[str, str] = {}  # room id -> the tone pair both sliders show since the room's last reply
 
 MAX_NAME_LENGTH = 40  # also the name input's maxlength, through route_home
 MAX_MESSAGE_LENGTH = 500  # also the chat input's maxlength, through route_home
-# Everything the client sends ends up in two OpenAI prompts, so these bound what one message can cost (S4). The client
+# Everything the client sends ends up in the OpenAI prompt, so these bound what one message can cost (S4). The client
 # sends at most the last 9 messages. History entries are mostly rewrites, which can come out longer than what was typed.
 MAX_HISTORY_ITEMS = 10
 MAX_HISTORY_ITEM_LENGTH = 1000
@@ -51,6 +54,8 @@ MAX_HISTORY_ITEM_LENGTH = 1000
 # It counts per station rather than per socket, so reconnecting doesn't reset it.
 MAX_REQUESTS_PER_MINUTE = 20
 request_times: dict[str, deque[float]] = {station: deque() for station in STATIONS}  # station -> recent request times
+# Handlers run in parallel threads, so without it two messages could both take a station's last request.
+request_times_lock = threading.Lock()
 # The model always reasons, and its reasoning counts against this cap too, so it leaves plenty of room beyond the reply
 # itself, which is a few hundred tokens at most. Without a cap, one reply could run to the model's 128K-token maximum.
 MAX_COMPLETION_TOKENS = 4000
@@ -217,12 +222,13 @@ def within_rate_limit(station: str) -> bool:
     """Counts a request against the station's MAX_REQUESTS_PER_MINUTE, or returns False if none are left."""
     now = time.monotonic()
     times = request_times[station]
-    while times and now - times[0] >= 60:
-        times.popleft()
-    if len(times) >= MAX_REQUESTS_PER_MINUTE:
-        return False
-    times.append(now)
-    return True
+    with request_times_lock:
+        while times and now - times[0] >= 60:
+            times.popleft()
+        if len(times) >= MAX_REQUESTS_PER_MINUTE:
+            return False
+        times.append(now)
+        return True
 
 
 def end_session(session_id: str, event: str, message: str):
@@ -236,6 +242,8 @@ def end_session(session_id: str, event: str, message: str):
         if partner:
             partners.pop(partner.session_id, None)
             rooms.pop(partner.session_id, None)
+        if room_id:
+            room_tones.pop(room_id, None)
 
     if partner and room_id:
         leave_room(room_id, session_id)
@@ -244,52 +252,58 @@ def end_session(session_id: str, event: str, message: str):
 
 
 def respond(session_id: str, new_message: MessageInput, instruction: str, label: str) -> dict:
-    """Generates the message and the next pair of tones, and sends them to the user's room. Returns the sender's ack."""
+    """Generates the message and the next pair of tones in one OpenAI call, and sends them to the user's room. Returns
+    the sender's ack."""
     room_id = rooms.get(session_id)
     station = stations.get(session_id)
     if not room_id:
         print("message dropped, not paired:", session_id)
         return NOT_DELIVERED
 
-    message = parse_completion(
+    # Every message brings a new pair of tones, so OpenAI can't pick the pair on the sender's slider. Nor the room's
+    # last pair: the slider can still show the previous chat's pair (F3), or the partner's reply can have changed it
+    # since the visitor pressed send.
+    shown = {TONE_PAIR_OF[new_message.tone_1.tone], TONE_PAIR_OF[new_message.tone_2.tone], room_tones.get(room_id)}
+    print(shown)
+    allowed = tuple(pair for pair in TONE_PAIRS if pair not in shown)
+    print(allowed)
+    reply = parse_completion(
         [
             {"role": "developer", "content": new_message.message_history_prompt()},
             {"role": "developer", "content": instruction},
-        ],
-        MessageResponse,
-    )
-
-    # With no message there's nothing to send, so don't pay for the tones.
-    if not message:
-        return NOT_DELIVERED
-    new_message.add_message(message)
-
-    tones_response = parse_completion(
-        [
-            {"role": "developer", "content": TONES_PROMPT},
-            {"role": "developer", "content": new_message.message_history_prompt()},
             {
                 "role": "developer",
-                "content": "Based on the past conversation, select 2 opposite tones of conversation from the provided list so that the given conversation can continue.",
+                "content": "Then, as next_tones, select the pair of opposite tones of conversation in which the conversation can continue after this message.",
             },
         ],
-        ToneResponse,
+        message_response_format(allowed),
     )
-    if not tones_response:
+    if not reply:
         return NOT_DELIVERED
 
-    # The pairing may have ended or changed while OpenAI was answering.
-    if rooms.get(session_id) != room_id:
+    next_pair = reply.next_tones
+    with pairing_lock:
+        # The pairing may have ended or changed while OpenAI was answering.
+        paired = rooms.get(session_id) == room_id
+        if paired:
+            # The partner's reply can arrive while OpenAI answers this one. If it brought the same pair, this one takes
+            # another, so the sliders still change.
+            if next_pair == room_tones.get(room_id):
+                next_pair = random.choice([pair for pair in allowed if pair != next_pair])
+            room_tones[room_id] = next_pair
+    if not paired:
         print("reply dropped, the pairing changed:", session_id)
         return NOT_DELIVERED
 
-    print(f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{message.message}"')
-    tones = ToneOptions(TONES_BY_NAME[tones_response.tone_a], TONES_BY_NAME[tones_response.tone_b])
+    print(
+        f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{reply.message}" tones: {next_pair}'
+    )
+    tones = TONE_PAIRS[next_pair]
     current_color = new_message.color
     socketio.emit(
         "response-message",
         {
-            "message": message.message,
+            "message": reply.message,
             "userName": new_message.user_name,
             # Both visitors can type the same name, so the clients tell whose message it is by station (P8). Only A
             # pairs with B, so the station names one side of the room.
@@ -307,19 +321,18 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
 
 def save_color(color):
     """Saves the latest color to Firestore. A failure is logged, never raised, because the chat doesn't need it."""
-    # Firestore blocks like OpenAI does, so it also runs in a real thread. Without retries, expired credentials
-    # or an outage fail in seconds instead of tying up a thread for the default 60 s.
+    # It runs after the emit, so a slow write only delays the sender's ack. Without retries, expired credentials or an
+    # outage fail in seconds instead of tying up the handler's thread for the default 60 s.
     try:
-        tpool.execute(db.collection("color").document("color").set, {"color": color}, timeout=5, retry=None)
+        db.collection("color").document("color").set({"color": color}, timeout=5, retry=None)
     except Exception as e:
         print("could not save color:", e)
 
 
 def parse_completion(messages: list, response_format):
-    # OpenAI calls block, so run them in a real thread; otherwise every other client freezes while one waits.
+    # The call blocks the handler's thread for up to 20 s, twice with the retry. Other handlers run in their own threads.
     try:
-        completion = tpool.execute(
-            client.beta.chat.completions.parse,
+        completion = client.beta.chat.completions.parse(
             # model="gpt-4o-mini",
             # model="gpt-4o-2024-08-06",
             model="gpt-6.1-sol",
@@ -340,8 +353,10 @@ def parse_completion(messages: list, response_format):
     return reply.parsed  # type: ignore
 
 
+# Local development only. The Docker image runs `app` with gunicorn (see the Dockerfile).
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    # Never debug=True: in eventlet mode it adds Werkzeug's interactive console, which would be
-    # reachable from the local network in development.
-    socketio.run(app, port=port, host="0.0.0.0", use_reloader=DEBUG, log_output=DEBUG)
+    # In threading mode this is Werkzeug's development server. Flask-SocketIO refuses to start it without a terminal,
+    # so it can't end up serving production by accident. Never debug=True: it adds Werkzeug's interactive console,
+    # which would be reachable from the local network.
+    socketio.run(app, port=port, host="0.0.0.0", use_reloader=DEBUG)

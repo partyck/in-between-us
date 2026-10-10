@@ -11,9 +11,9 @@ Context for Claude Code sessions in this repo. The longer docs are linked below.
 
 ## What this is
 
-"In between us." is an art installation. Two iPads, **station A** and **station B**, run the same web page as a home-screen app (PWA). A visitor types a name and is paired with the visitor at the other iPad, and they chat. The server rewrites every message with OpenAI in the tone the sender picked on a slider (e.g. Formal ↔ Informal). The partner only sees the rewritten text. After each message, OpenAI picks the next pair of opposite tones for both sliders. If a visitor stays silent for 30–45 s, the AI writes a "ghost message" on their behalf.
+"In between us." is an art installation. Two iPads, **station A** and **station B**, run the same web page as a home-screen app (PWA). A visitor types a name and is paired with the visitor at the other iPad, and they chat. The server rewrites every message with OpenAI in the tone the sender picked on a slider (e.g. Formal ↔ Informal). The partner only sees the rewritten text. In the same call, OpenAI picks the next pair of opposite tones for both sliders, never the pair they already show. If a visitor stays silent for 30–45 s, the AI writes a "ghost message" on their behalf.
 
-**Stack.** Python 3.11, Flask 3.1, Flask-SocketIO 5.6 (python-socketio 5.17) in eventlet 0.41 mode, OpenAI SDK 1.60 structured outputs, firebase-admin 7.7 (Firestore). Every Python package is pinned in `src/requirements.txt`, which pip-compile generates from `src/requirements.in`. The client is plain JS with p5.js 1.6 in global mode, p5.sound 1.0.1 and the Socket.IO 4.6.1 client, all vendored in `src/web/static/js/lib/`. There's no build step and no npm. It's deployed on Google Cloud Run as a single instance.
+**Stack.** Python 3.11, Flask 3.1, Flask-SocketIO 5.6 (python-socketio 5.17) in threading mode, served by gunicorn 26 in the image and by Werkzeug's development server for `make run`, OpenAI SDK 1.60 structured outputs, firebase-admin 7.7 (Firestore). Every Python package is pinned in `src/requirements.txt`, which pip-compile generates from `src/requirements.in`. The client is plain JS with p5.js 1.6 in global mode, p5.sound 1.0.1 and the Socket.IO 4.6.1 client, all vendored in `src/web/static/js/lib/`. There's no build step and no npm. It's deployed on Google Cloud Run as a single instance.
 
 ## Docs
 
@@ -36,11 +36,11 @@ Conventions:
 ```
 src/
   main.py          Flask app, Socket.IO handlers, in-memory pairing, OpenAI and Firestore calls
-  config.py        Reads env vars / config.toml, STATIONS, the tone table (TONES_WC, TONES_BY_NAME, TONES_PROMPT)
+  config.py        Reads env vars / config.toml, STATIONS, the tone table (TONES_WC, TONES_BY_NAME) and its pairs (TONE_PAIRS, TONE_PAIR_OF)
   models.py        Dataclasses for payloads (User, Room, MessageInput…), Pydantic models for OpenAI outputs
   utils/json.py    snake_case <-> camelCase for payloads
   config.toml      Local secrets only. Gitignored, never in the image
-  Dockerfile       python:3.11-slim, runs as the unprivileged user app
+  Dockerfile       python:3.11-slim, runs gunicorn as the unprivileged user app
   requirements.in  What the code imports. requirements.txt is generated from it by pip-compile, never edited by hand
   .dockerignore, .gcloudignore, requirements.txt
   web/templates/index.html   The only page: one <section id="<name>-scene"> per scene, then the script tags
@@ -57,29 +57,35 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
 - `src/config.toml` needs `openai_api_key` and `station_key`. The env vars `OPENAI_API_KEY` and `STATION_KEY` win over it. The server won't start without a station key.
 - Firestore uses Application Default Credentials (`gcloud auth application-default login`). A failed color write is only logged as `could not save color`.
 - To test both stations in one browser, open `http://localhost:8080/#station=A&key=<station_key>` and the same with `station=B` in two tabs.
-- `DEBUG=1` (set by the dev container) turns on the reloader, request logs and template reloading. Never pass `debug=True` to `socketio.run`: in eventlet mode it serves Werkzeug's Python console at `/console`.
+- `DEBUG=1` (set by the dev container) turns on the reloader and template reloading. Werkzeug logs every request either way. Never pass `debug=True` to `socketio.run`: it serves Werkzeug's Python console at `/console`.
+- `make run` needs a terminal: Flask-SocketIO refuses to start Werkzeug when stdin isn't a tty. From a script, use `docker exec -t` into the dev container.
+- Any iPad or browser tab that's open reconnects to whatever runs on port 8080, and a test socket for the same station sends it to the Closed scene. Test on another port, e.g. `PORT=8090`.
 - There are no tests. Available here: python3, pytest, black, pylint, gcloud. Not available: node or any JS runtime. `python3 -m py_compile src/*.py` is a quick syntax check.
-- Sessions on the Mac, outside the dev container, have Docker. They can build `src/Dockerfile` and run the image, with OpenAI faked through `OPENAI_BASE_URL`. D1 was tested that way.
+- Sessions on the Mac, outside the dev container, have Docker. They can build `src/Dockerfile` and run the image, with OpenAI faked through `OPENAI_BASE_URL`. firebase-admin needs credentials even then: a throwaway service-account JSON with any RSA key in `GOOGLE_APPLICATION_CREDENTIALS`, plus `FIRESTORE_EMULATOR_HOST` pointed at a port that accepts and never answers, makes each color write time out after 5 s. The dev container publishes 8080 on the Mac, so map the image to another port. D1 and A2 were tested that way.
 - Dependencies: change `src/requirements.in`, then regenerate `requirements.txt` and run pip-audit, on Python 3.11 (deployment.md, "Updating dependencies").
 - Formatting (from devcontainer.json): black with line length 120, isort with the black profile, 2-space indent in JS and JSON. Code comments are full sentences that explain why.
 
 ## Server rules
 
-- **One process, one instance.** Pairing state lives in memory in main.py: `waiting_user`, `partners`, `rooms`, `stations`, `station_sessions`. A second instance would have its own waiting slot. Cloud Run runs with `--max-instances=1 --timeout=3600`.
-- **Eventlet without monkey-patching.** Don't add `eventlet.monkey_patch()`: it breaks the gRPC library Firestore uses. So every blocking call (OpenAI, Firestore, any network or disk I/O) must go through `eventlet.tpool.execute`, or every client freezes. OpenAI: 20 s timeout, 1 retry, output capped at `MAX_COMPLETION_TOKENS` (4000). Firestore: 5 s timeout, no retry, run after the emit.
-- **`pairing_lock` is a real `threading.Lock`.** Nothing inside it may yield (emit, I/O, tpool), or the whole server deadlocks. The existing code changes state inside the lock and emits or joins rooms after it.
+- **One process, one instance.** Pairing state lives in memory in main.py: `waiting_user`, `partners`, `rooms`, `stations`, `station_sessions`, and `room_tones` for each room's current tone pair. A second instance would have its own waiting slot. Cloud Run runs with `--max-instances=1 --timeout=3600`. gunicorn runs one worker, with its control socket off (`--no-control-socket`), so nothing can add workers at runtime.
+- **Threading mode (A2).** gunicorn gives each connection a thread (one worker, 100 threads, in the Dockerfile), and python-socketio runs each event in a thread of its own. Blocking calls are made directly from the handler. OpenAI: 20 s timeout, 1 retry, output capped at `MAX_COMPLETION_TOKENS` (4000). Firestore: 5 s timeout, no retry, run after the emit. Don't bring back eventlet or gevent: both need monkey-patching for blocking calls, which breaks the gRPC library Firestore uses.
+- **Shared state changes under a lock.** A thread can be switched out between any two lines. `pairing_lock` guards the pairing state and `room_tones`, and `request_times_lock` the rate limit. Both are plain `threading.Lock`s, which aren't reentrant. Nothing inside `pairing_lock` may call a Socket.IO function: `disconnect()` runs `on_disconnect` in the same thread, which takes the lock again and deadlocks. The existing code changes state inside the lock and emits, joins rooms or disconnects after it. Anything new kept in memory (A3's history) needs a lock too.
 - **Auth.** The socket handshake carries `auth: {station, key}`. The station must be in `("A", "B")`, and the key is compared with `hmac.compare_digest`. The newest socket for a station wins and the old one is disconnected (that client shows the Closed scene). Only A pairs with B. CORS stays at its same-origin default: don't set `cors_allowed_origins`.
-- **`respond()`** handles both `send-message` and `send-ghost-message`. It makes two OpenAI calls (`MessageResponse` rewrites the text, then `ToneResponse` picks the tones), drops the reply if the sender's room changed meanwhile, emits `response-message` to the room, and then writes the color to Firestore.
+- **`respond()`** handles both `send-message` and `send-ghost-message`. It makes one OpenAI call (A4), whose `MessageResponse` holds the rewritten text and `next_tones`, the name of the next pair. It drops the reply if the sender's room changed meanwhile, emits `response-message` to the room, and then writes the color to Firestore.
 - **Model.** `parse_completion` in main.py uses `model="gpt-6.1-sol"` with `store=True`. If you change it, update the diagram in architecture.md §1 and the server notes in the README.
-- OpenAI's tone names index `TONES_BY_NAME` directly, so an unknown name raises `KeyError`. `on_error` logs it and answers `{delivered: false}`, so the bubble fades out (A6).
-- **The tone table exists twice:** `TONES_WC` in config.py and `Constants.tones` in constants.js. Change both (A5). `TONES` in config.py is unused.
+- **Tone pairs (A4, A6).** OpenAI picks the next pair by its name in `TONE_PAIRS` (`"Informal / Formal"`), from an enum that `message_response_format` in models.py builds for each call. So it can't return a tone that doesn't exist, or mix two pairs.
+  - The enum leaves out the pair on the sender's slider and the room's last pair in `room_tones`, so the sliders change with every message. The two differ when the slider carried over from the previous chat (F3) or the partner's reply changed it after the visitor pressed send.
+  - If the partner's reply brought the same pair while OpenAI was answering, `respond()` takes a random other pair from the enum, under `pairing_lock`.
+  - `MessageResponse` lists `message` before `next_tones` on purpose: structured outputs write keys in schema order, so the tones are picked after the message is written.
+  - `message_response_format` is cached per set of pairs, so OpenAI keeps seeing the same few schemas. A new schema can take longer on its first call.
+- **The tone table exists twice:** `TONES_WC` in config.py and `Constants.tones` in constants.js. Change both (A5). `TONE_PAIRS` and `TONE_PAIR_OF` are built from `TONES_WC`. `TONES` in config.py is unused.
 - The inputs' `maxlength` comes from main.py, so it can't drift from the server's limits: `route_home` passes `MAX_NAME_LENGTH` (40) and `MAX_MESSAGE_LENGTH` (500) to the template as `max_name_length` and `max_message_length`, for `#name-input` and `.chat-input`.
 - **Spend limits (S4).** `read_message` in main.py checks every `send-message` and `send-ghost-message` before OpenAI sees it.
   - It drops a message from a socket with no station, and one over the station's `MAX_REQUESTS_PER_MINUTE` (20, counted per station in `request_times`, so a reconnect doesn't reset it).
   - It drops a message over `MAX_MESSAGE_LENGTH`, or with a tone name not in `TONES_BY_NAME`.
   - It cuts names to 40 characters, and keeps the last `MAX_HISTORY_ITEMS` (10) history entries, each cut to `MAX_HISTORY_ITEM_LENGTH` (1000).
   - Anything new that the client sends into a prompt needs a limit there too.
-  - `parse_completion` passes `max_completion_tokens=MAX_COMPLETION_TOKENS`. `gpt-6.1-sol` always reasons, and reasoning counts against the cap, so don't set it near the length of a reply. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` turns into `None`. `respond()` then skips the tone call.
+  - `parse_completion` passes `max_completion_tokens=MAX_COMPLETION_TOKENS`. `gpt-6.1-sol` always reasons, and reasoning counts against the cap, so don't set it near the length of a reply. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` turns into `None`. `respond()` then answers `NOT_DELIVERED`.
   - Every drop answers the sender's ack with `NOT_DELIVERED` (see the next bullet).
 - **Acks and errors (P1, S10).** The `send-message` and `send-ghost-message` handlers return `DELIVERED` or `NOT_DELIVERED`, which Socket.IO sends back as the ack. Only the ack for `send-message` is used, by the client. Any way out of `respond()` that doesn't emit `response-message` must return `NOT_DELIVERED`, or the bubble waits forever.
   - `on_error` (`@socketio.on_error_default`) logs the traceback and returns `NOT_DELIVERED`, and `False` when `request.event["message"]` is `connect`. Flask-SocketIO uses the error handler's return value in place of the handler's, so for the handshake anything but `False` would let a socket in without the station key. Keep that check.
@@ -91,6 +97,7 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
   - S8: only sockets with the station key can connect.
   - S10: an exception in `on_connect` refuses the socket, through `on_error` returning `False`.
   - D1: the image runs as the user `app`, and sets `PYTHONUNBUFFERED=1` so `print` output reaches Cloud Run's logs straight away.
+  - A2: threading mode under gunicorn, one worker, `--no-control-socket`. No eventlet and no `tpool`.
 
 ## Client
 
@@ -149,6 +156,6 @@ Makefile           run, secrets, station-key, deploy, domain. Every gcloud call 
 
 ## State of the docs
 
-README.md, architecture.md and todo.md were brought up to date with `13de701` on 2026-10-07, and every line link in them was checked. architecture.md says which commit it describes, so bump that when you update it.
+README.md, architecture.md and todo.md were brought up to date with `13de701` on 2026-10-07, and every line link in them was checked. architecture.md says which commit it describes, so bump that when you update it. The `main.py` and `models.py` line links in every doc were refreshed for A4 on 2026-10-10.
 
 The local `src/config.toml` still has a `dever` key that nothing reads.

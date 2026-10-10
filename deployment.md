@@ -12,7 +12,7 @@ The server runs on Cloud Run as a single instance, from the image built with [sr
 | `PORT` | Set by Cloud Run | 8080 |
 | Firestore credentials | The service's service account | Your gcloud Application Default Credentials |
 
-- `DEBUG=1` turns on the reloader, request logs and template reloading. Werkzeug's interactive debugger is never used, in any environment, because in eventlet mode it serves a Python console at `/console`.
+- `DEBUG=1` turns on the reloader and template reloading. Werkzeug's interactive debugger is never used, in any environment, because it serves a Python console at `/console`.
 - `src/config.toml` is gitignored. [.dockerignore](src/.dockerignore) and [.gcloudignore](src/.gcloudignore) keep it, `.env` and `__pycache__` out of the image and out of the Cloud Build upload. Keep the two files in sync.
 - With no key from either source, the server fails at startup with OpenAI's "The api_key client option must be set" error.
 - Without a station key, it fails at startup with `STATION_KEY is not set`. Only a page that sends the right station key can open a socket, so without one no installation could connect.
@@ -79,7 +79,7 @@ REGION=europe-west1
 
    The server writes the sender's slider color to `color/color` on every message. A failed write doesn't stop the chat. It's only logged, as `could not save color`.
 
-6. Set a budget limit on the OpenAI project, in the OpenAI dashboard. The server holds each station to 20 messages a minute, at two OpenAI calls each, but only the budget limit caps the total.
+6. Set a budget limit on the OpenAI project, in the OpenAI dashboard. The server holds each station to 20 messages a minute, at one OpenAI call each, but only the budget limit caps the total.
 
 ## Deploy
 
@@ -101,6 +101,8 @@ REGION=europe-west1
    | `--max-instances=1` | Pairing state is in memory. A second instance has its own waiting slot and can leave the installations unable to reach each other (D5 in [todo.md](todo.md)). |
    | `--timeout=3600` | Cloud Run closes WebSockets at the request timeout, 5 minutes by default, which clears the chat. 60 minutes is the maximum (D2). |
    | `--set-secrets` | Sets `OPENAI_API_KEY` and `STATION_KEY` from Secret Manager. `latest` is read when an instance starts. |
+
+   Inside the instance, gunicorn runs the app with one worker and 100 threads ([src/Dockerfile](src/Dockerfile)). One worker for the same reason as one instance, and a thread for each open WebSocket or long-poll. Keep `--threads` above Cloud Run's concurrency, 80 by default, so the threads aren't the limit open connections run into first (D6).
 
    There's no `--min-instances`. With nobody connected, the service scales to zero, and the next page load waits for the server to start.
 
@@ -206,11 +208,12 @@ Rotate it if the key leaks.
 
 - Firestore uses your Application Default Credentials (`gcloud auth application-default login`). The dev container links `~/.config/gcloud` to `~/.devcontainer-shared/gcloud-config` on the host, so the login survives rebuilds. When the credentials expire, color writes fail and are logged.
 - Start the server with `make run` from the repo root, or `python3 src/main.py` from any directory. Port 8080 is published on all of your machine's network interfaces, so the installation devices can open `http://<your machine's IP>:8080` on the same network.
+- `make run` uses Werkzeug's development server, which logs every request. Flask-SocketIO only starts it from a terminal, so it can't end up serving production. Started from a script, it stops with `The Werkzeug web server is not designed to run in production`. When a socket closes, Werkzeug sometimes logs a `400 Bad request syntax` for the WebSocket's last bytes. That's harmless: the disconnect has already been handled.
 - The dev container installs [requirements.txt](src/requirements.txt) when it's created. After the requirements change, run `pip3 install --user -r src/requirements.txt` in it, or rebuild it.
 
 ## Updating dependencies
 
-[requirements.in](src/requirements.in) lists the packages the code imports. [requirements.txt](src/requirements.txt) is generated from it with pip-compile. It pins every package the image installs, and notes which package needs each one. Change requirements.in, never requirements.txt by hand.
+[requirements.in](src/requirements.in) lists the packages the code imports, and gunicorn and simple-websocket, which serve it. [requirements.txt](src/requirements.txt) is generated from it with pip-compile. It pins every package the image installs, and notes which package needs each one. Change requirements.in, never requirements.txt by hand.
 
 Run pip-compile on Python 3.11, like the image, because it resolves for the Python it runs on. In the dev container:
 
@@ -230,8 +233,8 @@ docker run --rm -v "$PWD/src:/src" -w /src python:3.11-slim sh -c 'pip install -
 
 - Run pip-audit now and then, not only after a change: advisories are published against versions that are already pinned. `pip-compile --upgrade-package <name> …` moves only the packages it names.
 - `openai` and `pydantic` are pinned in requirements.in at the versions the prompts were tried with. Upgrade them on purpose, and send a few messages through OpenAI afterwards.
-- After an upgrade, test both stations locally and read the server log. [`on_error`](src/main.py#L163-L171) catches every exception in a handler, so a library that calls a handler differently only shows up there as a traceback. That's how Flask-SocketIO's new `disconnect` argument was caught (D1 in [todo.md](todo.md)).
-- eventlet prints an `EventletDeprecationWarning` at startup. That's expected (A2).
+- After an upgrade, test both stations locally and read the server log. [`on_error`](src/main.py#L168-L176) catches every exception in a handler, so a library that calls a handler differently only shows up there as a traceback. That's how Flask-SocketIO's new `disconnect` argument was caught (D1 in [todo.md](todo.md)).
+- `make run` doesn't use gunicorn. After upgrading it, build the image and try it, as A2 in [todo.md](todo.md) was tested. gunicorn 25.1, for example, added a control socket that failed to start in the image, and the Dockerfile now turns it off.
 
 ## Not handled yet
 

@@ -1,9 +1,13 @@
-# What main.py, config.py and models.py import. requirements.txt pins these and everything they need, and is generated
-# from this file with pip-compile (see deployment.md, "Updating dependencies").
-eventlet
+# What main.py, config.py and models.py import, and the server that runs them. requirements.txt pins these and
+# everything they need, and is generated from this file with pip-compile (see deployment.md, "Updating dependencies").
 firebase-admin
 Flask
 Flask-SocketIO
+# Serves the app in the Docker image, with a thread per connection (Flask-SocketIO's threading mode).
+gunicorn
+# Gives threading mode its WebSocket transport. python-engineio requires it too, but without it the sockets would
+# silently fall back to long-polling, so it's listed on purpose.
+simple-websocket
 # Kept where the prompts and structured outputs were last tried against OpenAI.
 openai==1.60.0
 pydantic==2.10.5
