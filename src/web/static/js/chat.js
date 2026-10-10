@@ -43,25 +43,29 @@ class Chat extends Scene {
         return !message.isFading() && message.content === prompt;
       });
       if (newMessage) {
-        let distance = newMessage.rephrase(message);
-        this.messages.forEach((message) => {
-          if (message.content !== newMessage.content) {
-            message.y = message.y + distance;
-          }
-        });
+        newMessage.rephrase(message);
       }
       else {
-        let newMessage = new Message(message, newUserName, station, c.sendMessageBGC2, false);
-        this.messages.forEach((message) => { message.move(newMessage.height) });
-        this.messages.push(newMessage);
+        this.messages.push(new Message(message, newUserName, station, c.sendMessageBGC2, false));
       }
     }
     else {
       this.sound.newMessage();
-      let newMessage = new Message(message, newUserName, station);
-      this.messages.forEach((message) => { message.move(newMessage.height) });
-      this.messages.push(newMessage);
+      this.messages.push(new Message(message, newUserName, station));
     }
+    this.layout();
+  }
+
+  // Stacks the bubbles from the bottom of the chat up, newest at the bottom, from their order in this.messages and
+  // their current heights. Everything that adds, rewrites or removes a bubble calls it. Moving bubbles by offsets went
+  // wrong when a rewrite came back after the partner's next message: the rewritten bubble jumped to the bottom, on top
+  // of the partner's (P3).
+  layout() {
+    let below = null;
+    this.messages.slice().reverse().forEach((message) => {
+      message.placeAbove(below);
+      below = message;
+    });
   }
 
   enter() {
@@ -94,17 +98,16 @@ class Chat extends Scene {
   removeFadedMessage() {
     const index = this.messages.findIndex((message) => message.isGone());
     if (index < 0) return;
-    const gone = this.messages[index];
-    this.messages.slice(0, index).forEach((message) => { message.moveDown(gone.height) });
     this.messages.splice(index, 1);
+    this.layout();
   }
 
   newMessage = () => {
     let message = this.messageInput.value();
     if (message) {
       let newMessage = new Message(message, userName, socketService.station, this.toneController.toneColor);
-      this.messages.forEach((message) => { message.move(newMessage.height) });
       this.messages.push(newMessage);
+      this.layout();
       socketService.sendMessage(userName, message, this.toneController.tonePayload(), this.messageHistory, (ack) => {
         // The server dropped it, so no rewrite will replace the bubble. It fades out instead of waiting forever.
         if (ack?.delivered === false) newMessage.fadeOut();

@@ -3,6 +3,8 @@ const MESSAGE_FONT = 'Arial';
 const MESSAGE_TEXT_SIZE = 16;
 // How long the bubble of a message the server dropped takes to fade out (P1).
 const MESSAGE_FADE_MS = 6000;
+// Space between the text of two bubbles. Each bubble's background reaches 8 px past its text, so 4 px of it shows.
+const MESSAGE_GAP = 20;
 
 class Message {
 	// `station` is the sender's. It decides the side, since both visitors can have the same name (P8).
@@ -31,23 +33,17 @@ class Message {
 	rephrase(newContent) {
 		this.waiting = false;
 		this.content = newContent;
-		let old_height = this.height;
 		this.calculateTextWidthAndHeight();
-		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 		this.animation_s = 50;
 		this.bgColor = c.sendMessageBGC2;
 		this.strokeColor = color(255);
-		return old_height - this.height;
 	}
 
-	move(displacement) {
-		this.y = this.y - (displacement) - 20;
-	}
-
-	// Undoes move(), for when a bubble below this one is removed.
-	moveDown(displacement) {
-		this.y = this.y + displacement + 20;
+	// Puts the bubble just above `below`, the next newer bubble, or at the bottom of the chat when there's none.
+	placeAbove(below) {
+		const bottom = below ? below.y - MESSAGE_GAP : this.MAX_MESSAGE_HEIGHT;
+		this.y = bottom - this.height;
 	}
 
 	// The server dropped this message. Chat removes the bubble once it has faded out. It stops pulsing first: the pulse
