@@ -14,7 +14,7 @@ from flask_socketio import SocketIO, disconnect, join_room, leave_room
 from openai import LengthFinishReasonError, OpenAI
 
 from config import DEBUG, OPENAI_API_KEY, STATION_KEY, STATIONS, TONE_PAIR_OF, TONE_PAIRS, TONES_BY_NAME
-from models import MessageInput, Room, User, message_response_format
+from models import MessageInput, Room, User, burst_response_format, message_response_format
 
 if not STATION_KEY:
     raise RuntimeError("STATION_KEY is not set, so no installation could connect. See deployment.md.")
@@ -43,11 +43,12 @@ rooms: dict[str, str] = {}  # session id -> room id
 stations: dict[str, str] = {}  # session id -> station
 station_sessions: dict[str, str] = {}  # station -> session id of the socket that holds it
 room_tones: dict[str, str] = {}  # room id -> the tone pair both sliders show since the room's last reply
+finale_rooms: set[str] = set()  # rooms whose finale (send-ghost-burst) has started, so it runs once per chat
 
 MAX_NAME_LENGTH = 40  # also the name input's maxlength, through route_home
 MAX_MESSAGE_LENGTH = 500  # also the chat input's maxlength, through route_home
 # Everything the client sends ends up in the OpenAI prompt, so these bound what one message can cost (S4). The client
-# sends at most the last 9 messages. History entries are mostly rewrites, which can come out longer than what was typed.
+# sends at most the last 10 messages. History entries are mostly rewrites, which can come out longer than what was typed.
 MAX_HISTORY_ITEMS = 10
 MAX_HISTORY_ITEM_LENGTH = 1000
 # A visitor typing fast, plus ghost messages, stays well under this, so it only stops a looping script or a client bug.
@@ -59,6 +60,11 @@ request_times_lock = threading.Lock()
 # The model always reasons, and its reasoning counts against this cap too, so it leaves plenty of room beyond the reply
 # itself, which is a few hundred tokens at most. Without a cap, one reply could run to the model's 128K-token maximum.
 MAX_COMPLETION_TOKENS = 4000
+# The finale of a chat: one OpenAI call writes this many messages for both visitors, and the room gets them one by one.
+# The gap before each one shrinks exponentially, from the first gap (before the second message) to the last, in seconds.
+GHOST_BURST_LENGTH = 16
+GHOST_BURST_FIRST_GAP = 2.0
+GHOST_BURST_LAST_GAP = 0.2
 
 # The ack that answers a send-message. When it isn't delivered, nothing will replace the sender's bubble, so the client
 # fades it out (P1).
@@ -165,6 +171,28 @@ def event_send_ghost_message(data):
     )
 
 
+@socketio.on("send-ghost-burst")
+def event_send_ghost_burst(data):
+    """The finale of a chat. The screen whose visitor is next asks for it once the chat has run its length. Both
+    screens go home after chat-end, which comes whether or not the burst made it."""
+    session_id = request.sid  # type: ignore
+    with pairing_lock:
+        room_id = rooms.get(session_id)
+        # If both screens think their visitor is next, both ask. The first one gets the finale.
+        if not room_id or room_id in finale_rooms:
+            return NOT_DELIVERED
+        finale_rooms.add(room_id)
+    new_message = None
+    try:
+        new_message = read_message(data)
+        ack = respond_burst(session_id, room_id, new_message) if new_message else NOT_DELIVERED
+    finally:
+        socketio.emit("chat-end", {}, to=room_id)
+    if new_message and ack is DELIVERED:
+        save_color(new_message.color)
+    return ack
+
+
 @socketio.on_error_default
 def on_error(e):
     """Logs an exception from any handler. A send-message gets NOT_DELIVERED back, so its bubble fades out (P1)."""
@@ -244,6 +272,7 @@ def end_session(session_id: str, event: str, message: str):
             rooms.pop(partner.session_id, None)
         if room_id:
             room_tones.pop(room_id, None)
+            finale_rooms.discard(room_id)
 
     if partner and room_id:
         leave_room(room_id, session_id)
@@ -281,42 +310,99 @@ def respond(session_id: str, new_message: MessageInput, instruction: str, label:
     if not reply:
         return NOT_DELIVERED
 
-    next_pair = reply.next_tones
-    with pairing_lock:
-        # The pairing may have ended or changed while OpenAI was answering.
-        paired = rooms.get(session_id) == room_id
-        if paired:
-            # The partner's reply can arrive while OpenAI answers this one. If it brought the same pair, this one takes
-            # another, so the sliders still change.
-            if next_pair == room_tones.get(room_id):
-                next_pair = random.choice([pair for pair in allowed if pair != next_pair])
-            room_tones[room_id] = next_pair
-    if not paired:
+    next_pair = take_room_tones(session_id, room_id, reply.next_tones, allowed)
+    if not next_pair:
         print("reply dropped, the pairing changed:", session_id)
         return NOT_DELIVERED
 
     print(
         f'{label} from: {new_message.user_name} prompt: "{new_message.message}" message: "{reply.message}" tones: {next_pair}'
     )
-    tones = TONE_PAIRS[next_pair]
-    current_color = new_message.color
+    emit_message(room_id, reply.message, new_message.user_name, station, new_message.message, next_pair, new_message.color)
+    save_color(new_message.color)
+    return DELIVERED
+
+
+def respond_burst(session_id: str, room_id: str, new_message: MessageInput) -> dict:
+    """Writes GHOST_BURST_LENGTH messages for both visitors in one OpenAI call, and sends them to the room one by one,
+    faster and faster. Returns the sender's ack."""
+    station = stations.get(session_id)
+    partner = partners.get(session_id)
+    if not station or not partner:
+        return NOT_DELIVERED
+    # The sender's screen asks when its visitor is next, so the burst starts with them and then alternates.
+    first, second = (new_message.user_name, station), (partner.user_name, partner.station)
+    reply = parse_completion(
+        [
+            {"role": "developer", "content": new_message.message_history_prompt()},
+            {
+                "role": "developer",
+                "content": f"Based on the past conversation, generate the next {GHOST_BURST_LENGTH} messages of the conversation, alternating between {first[0]} and {second[0]}, starting with {first[0]}. Write only what each of them says, without their name. They should sound {new_message.higher_tone_value()}% more {new_message.higher_tone_name()}. Each message should be less than 80 characters long. Do not use place holders.",
+            },
+            {
+                "role": "developer",
+                "content": "For each message, as next_tones, select the pair of opposite tones of conversation in which the conversation can continue after it.",
+            },
+        ],
+        burst_response_format(tuple(TONE_PAIRS)),
+    )
+    if not reply or not reply.messages:
+        return NOT_DELIVERED
+
+    # Speakers alternate by position, whatever OpenAI meant, since both visitors can have the same name.
+    for i, item in enumerate(reply.messages[:GHOST_BURST_LENGTH]):
+        if i:
+            socketio.sleep(burst_gap(i))
+        user_name, speaker_station = (first, second)[i % 2]
+        next_pair = take_room_tones(session_id, room_id, item.next_tones, tuple(TONE_PAIRS))
+        if not next_pair:
+            print("burst stopped, the pairing changed:", session_id)
+            return NOT_DELIVERED
+        # OpenAI tends to start each message with the speaker's name, the way the history shows them.
+        text = item.message.removeprefix(f"{user_name}:").strip()
+        print(f'burst message {i + 1} from: {user_name} message: "{text}" tones: {next_pair}')
+        emit_message(room_id, text, user_name, speaker_station, "", next_pair, new_message.color)
+    return DELIVERED
+
+
+def burst_gap(i: int) -> float:
+    """Seconds to wait before the burst's message i (counted from 0, so i >= 1)."""
+    steps = max(GHOST_BURST_LENGTH - 2, 1)
+    return GHOST_BURST_FIRST_GAP * (GHOST_BURST_LAST_GAP / GHOST_BURST_FIRST_GAP) ** ((i - 1) / steps)
+
+
+def take_room_tones(session_id: str, room_id: str, next_pair: str, allowed: tuple[str, ...]) -> Optional[str]:
+    """Makes `next_pair` the room's pair and returns it, or returns None if the pairing ended or changed while OpenAI
+    was answering."""
+    with pairing_lock:
+        if rooms.get(session_id) != room_id:
+            return None
+        # The partner's reply can arrive while OpenAI answers this one. If it brought the same pair, this one takes
+        # another, so the sliders still change.
+        if next_pair == room_tones.get(room_id):
+            next_pair = random.choice([pair for pair in allowed if pair != next_pair])
+        room_tones[room_id] = next_pair
+        return next_pair
+
+
+def emit_message(room_id: str, message: str, user_name: str, station: str, prompt: str, pair: str, color: str):
+    """Sends a message to both screens in the room, with the pair of tones both sliders show next."""
+    tones = TONE_PAIRS[pair]
     socketio.emit(
         "response-message",
         {
-            "message": reply.message,
-            "userName": new_message.user_name,
+            "message": message,
+            "userName": user_name,
             # Both visitors can type the same name, so the clients tell whose message it is by station (P8). Only A
             # pairs with B, so the station names one side of the room.
             "station": station,
-            "prompt": new_message.message,
+            "prompt": prompt,
             "tone1": {"name": tones.tone_a.name, "color": tones.tone_a.color.to_json()},
             "tone2": {"name": tones.tone_b.name, "color": tones.tone_b.color.to_json()},
-            "color": current_color,
+            "color": color,
         },
         to=room_id,
     )
-    save_color(current_color)
-    return DELIVERED
 
 
 def save_color(color):

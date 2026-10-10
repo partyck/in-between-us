@@ -66,6 +66,12 @@ class SocketService {
       console.log('🔌⬅️ response message!', data);
       currentScene.onMessage?.(data);
     });
+
+    // The finale's burst is over, or failed, and the chat ends.
+    this.socket.on('chat-end', () => {
+      console.log('🔌⬅️ chat end!');
+      currentScene.onChatEnd?.();
+    });
   }
 
   // onAck gets the server's answer once it's done with the message. `{delivered: false}` means it was dropped (P1).
@@ -82,12 +88,28 @@ class SocketService {
     });
   }
 
-  sendGhostMessage(userName, tone, messageHistory) {
+  // onAck works as for sendMessage. Chat waits for it before it sends another ghost message.
+  sendGhostMessage(userName, tone, messageHistory, onAck) {
     console.log('🔌➡️ send gost message.');
     this.socket.emit('send-ghost-message', {
       userName,
       tone,
       messageHistory
+    }, (ack) => {
+      console.log('🔌⬅️ send gost message ack:', ack);
+      onAck?.(ack);
+    });
+  }
+
+  // The finale: the server writes a burst of messages for both visitors and sends them one by one, then chat-end.
+  sendGhostBurst(userName, tone, messageHistory) {
+    console.log('🔌➡️ send ghost burst.');
+    this.socket.emit('send-ghost-burst', {
+      userName,
+      tone,
+      messageHistory
+    }, (ack) => {
+      console.log('🔌⬅️ send ghost burst ack:', ack);
     });
   }
 

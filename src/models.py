@@ -90,6 +90,22 @@ def message_response_format(pairs: tuple[str, ...]) -> type[MessageResponse]:
     return create_model("MessageResponse", __base__=MessageResponse, next_tones=(Literal[pairs], ...))  # type: ignore
 
 
+class BurstMessage(BaseModel):
+    message: str
+    next_tones: str  # the name of a pair in TONE_PAIRS, see burst_response_format
+
+
+class BurstResponse(BaseModel):
+    messages: list[BurstMessage]
+
+
+@lru_cache
+def burst_response_format(pairs: tuple[str, ...]) -> type[BurstResponse]:
+    """A BurstResponse whose messages' next_tones can only be one of `pairs`, as in message_response_format."""
+    message = create_model("BurstMessage", __base__=BurstMessage, next_tones=(Literal[pairs], ...))  # type: ignore
+    return create_model("BurstResponse", __base__=BurstResponse, messages=(list[message], ...))  # type: ignore
+
+
 @dataclass
 class ToneOption:
     name: str

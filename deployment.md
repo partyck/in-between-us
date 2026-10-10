@@ -233,7 +233,7 @@ docker run --rm -v "$PWD/src:/src" -w /src python:3.11-slim sh -c 'pip install -
 
 - Run pip-audit now and then, not only after a change: advisories are published against versions that are already pinned. `pip-compile --upgrade-package <name> …` moves only the packages it names.
 - `openai` and `pydantic` are pinned in requirements.in at the versions the prompts were tried with. Upgrade them on purpose, and send a few messages through OpenAI afterwards.
-- After an upgrade, test both stations locally and read the server log. [`on_error`](src/main.py#L168-L176) catches every exception in a handler, so a library that calls a handler differently only shows up there as a traceback. That's how Flask-SocketIO's new `disconnect` argument was caught (D1 in [todo.md](todo.md)).
+- After an upgrade, test both stations locally and read the server log. [`on_error`](src/main.py#L196-L204) catches every exception in a handler, so a library that calls a handler differently only shows up there as a traceback. That's how Flask-SocketIO's new `disconnect` argument was caught (D1 in [todo.md](todo.md)).
 - `make run` doesn't use gunicorn. After upgrading it, build the image and try it, as A2 in [todo.md](todo.md) was tested. gunicorn 25.1, for example, added a control socket that failed to start in the image, and the Dockerfile now turns it off.
 
 ## Not handled yet

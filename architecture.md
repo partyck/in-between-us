@@ -2,7 +2,7 @@
 
 In Between Us connects two installations. A visitor at each one types a name, is paired with the visitor at the other installation, and they chat. Every message goes through OpenAI and is rewritten in the tone the sender picked on a slider before either side sees it. If a visitor stays silent, the AI writes a message on their behalf.
 
-This document describes the code as of `9728ca2`, plus A2 and A4 (not committed yet). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
+This document describes the code as of `148dd49`, plus the ghost timer's speed-up and the finale (not committed yet). Line links will drift as the code changes. The [README](README.md) has a shorter summary, [todo.md](todo.md) tracks open work, and [deployment.md](deployment.md) covers Cloud Run.
 
 ## 1. System overview
 
@@ -34,7 +34,7 @@ flowchart LR
 
 - **Two browser clients.** Each installation is an iPad running the same page as a home-screen app. It's set up once as station A or B with the shared station key, which it keeps in `localStorage`. The socket handshake carries both, and the server refuses any other socket.
 - **One server process.** Flask serves the page and static files. Flask-SocketIO, in threading mode, handles the socket events. In the Docker image, gunicorn serves both with one worker and 100 threads. All pairing state is in memory, so the server must run as a single process on a single instance.
-- **OpenAI.** Each message costs one structured-output call, which rewrites the text and picks the next pair of tones for the sliders. The model is set in `parse_completion` ([main.py](src/main.py#L330-L351)).
+- **OpenAI.** Each message costs one structured-output call, which rewrites the text and picks the next pair of tones for the sliders. The model is set in `parse_completion` ([main.py](src/main.py#L418-L439)).
 - **Firestore.** Only one document is used, `color/color`. It's overwritten with the sender's slider color on every delivered message. Nothing in this repo reads it back, so it may not be needed at all (A7 in [todo.md](todo.md)).
 
 ## 2. Server
@@ -65,7 +65,7 @@ A session is always in one of three states:
 | Waiting | `waiting_user` | `login` while the slot is empty | Someone else logs in, or its own `logout`, disconnect or new `login` |
 | Paired | `partners`, `rooms`, and the Socket.IO room | `login` while someone else is waiting | Its own or its partner's `logout`, disconnect or new `login` |
 
-Rules ([on_connect](src/main.py#L70-L88), [on_login](src/main.py#L104-L130), [end_session](src/main.py#L234-L251)):
+Rules ([on_connect](src/main.py#L76-L94), [on_login](src/main.py#L110-L136), [end_session](src/main.py#L262-L280)):
 
 - A socket is only accepted with `auth: {station, key}`, where the station is `A` or `B` and the key matches `STATION_KEY`. Anything else is refused in the handshake.
 - The newest socket for a station wins. The older one is disconnected, which ends its session like any disconnect.
@@ -77,10 +77,10 @@ Rules ([on_connect](src/main.py#L70-L88), [on_login](src/main.py#L104-L130), [en
 
 ### Handling a message
 
-[`respond()`](src/main.py#L254-L317) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
+[`respond()`](src/main.py#L283-L323) runs the same steps for `send-message` and `send-ghost-message`. Only the instruction differs:
 
-1. **Limits** ([`read_message`](src/main.py#L193-L218)), which bound OpenAI spend (S4). Each check can drop the message.
-   - **Rate.** Drop the message if the socket has no station, or if its station has sent 20 messages in the last minute ([`within_rate_limit`](src/main.py#L221-L231)). The count is per station, so a reconnect doesn't reset it.
+1. **Limits** ([`read_message`](src/main.py#L221-L246)), which bound OpenAI spend (S4). Each check can drop the message.
+   - **Rate.** Drop the message if the socket has no station, or if its station has sent 20 messages in the last minute ([`within_rate_limit`](src/main.py#L249-L259)). The count is per station, so a reconnect doesn't reset it.
    - **Size.** Drop a message over 500 characters, or one whose tone names aren't in the tone table. Cut the sender's name to 40 characters, and keep the last 10 history entries, each cut to a 40-character name and 1000 characters of text.
 2. Look up the sender's room. If they aren't paired, drop the event.
 3. **Tones to leave out:** the pair on the sender's slider, and the room's last pair from `room_tones`. They differ when the slider still shows the previous chat's pair (F3 in [todo.md](todo.md)), or when the partner's reply changed it after the visitor pressed send.
@@ -90,9 +90,21 @@ Rules ([on_connect](src/main.py#L70-L88), [on_login](src/main.py#L104-L130), [en
 7. Write the sender's slider color to Firestore. A failure is only logged.
 8. Answer the sender's ack with `{delivered: true}`.
 
-Every way out before step 6 answers `{delivered: false}` instead, and the client fades the bubble out (P1). An exception anywhere goes to [`on_error`](src/main.py#L168-L176), the `@socketio.on_error_default` handler. It logs the traceback and answers `{delivered: false}` as well. For the handshake it returns `False`, which refuses the socket. Flask-SocketIO uses the error handler's return value in place of the handler's, so for `connect` anything else would let the socket in without the key (S10).
+Every way out before step 6 answers `{delivered: false}` instead, and the client fades the bubble out (P1). An exception anywhere goes to [`on_error`](src/main.py#L196-L204), the `@socketio.on_error_default` handler. It logs the traceback and answers `{delivered: false}` as well. For the handshake it returns `False`, which refuses the socket. Flask-SocketIO uses the error handler's return value in place of the handler's, so for `connect` anything else would let the socket in without the key (S10).
 
-The OpenAI call sets `max_completion_tokens` to 4000 ([`parse_completion`](src/main.py#L330-L351)). The model always reasons, and reasoning counts against the cap, so it's set well above what a rewrite needs. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` logs and turns into `None`.
+The OpenAI call sets `max_completion_tokens` to 4000 ([`parse_completion`](src/main.py#L418-L439)). The model always reasons, and reasoning counts against the cap, so it's set well above what a rewrite needs. A reply that hits it raises `LengthFinishReasonError`, which `parse_completion` logs and turns into `None`.
+
+### The finale
+
+[`event_send_ghost_burst`](src/main.py#L174-L193) handles `send-ghost-burst`, which a screen sends once the chat has run 5 minutes and its visitor is next:
+
+1. Under `pairing_lock`: if the sender isn't paired, or the room is already in `finale_rooms`, answer `{delivered: false}`. Otherwise add the room. So each chat gets one finale, even when both screens ask. `end_session` clears the room's entry.
+2. The same limits as any message ([`read_message`](src/main.py#L221-L246)).
+3. [`respond_burst`](src/main.py#L326-L365) makes one OpenAI call for `GHOST_BURST_LENGTH` (16) messages (`BurstResponse`, [models.py](src/models.py#L93-L106)), alternating between the sender's visitor and the partner, starting with the sender's. Each message picks its `next_tones` from every pair. The speakers go by position, not by any name OpenAI writes, since both visitors can have the same name. A leading `Name:` is stripped, because OpenAI tends to copy that from the history.
+4. It emits the messages to the room as `response-message`s with the right station each, sleeping between them. The gaps shrink exponentially from `GHOST_BURST_FIRST_GAP` (2 s) to `GHOST_BURST_LAST_GAP` (0.2 s), [`burst_gap`](src/main.py#L368-L371). Before each one, [`take_room_tones`](src/main.py#L374-L385) checks the pairing under the lock, and stores the message's pair, or a random other one if the sliders already show it. If the pairing changed, the burst stops.
+5. Whatever happened, a `finally` emits `chat-end` to the room. Then the sender's slider color goes to Firestore, once for the whole burst, and the sender gets its ack.
+
+The handler's thread sleeps through the burst, about 12 s plus OpenAI's 11 s, which threading mode allows. A real call to `gpt-6.1-sol` took 10.8–11.5 s to write the 16 messages.
 
 ### Concurrency model
 
@@ -130,10 +142,11 @@ stateDiagram-v2
     Login --> Waiting: submit name, emit login
     Waiting --> Chat: room
     Waiting --> Waiting: reconnect, emit login
-    Chat --> Waiting: userdisconnect or reconnect, emit login
+    Chat --> Waiting: userdisconnect or reconnect before the end, emit login
     Login --> Reload: about 1 min idle
     Waiting --> Reload: about 1 min idle
     Chat --> Reload: X pressed, or server logout
+    Chat --> Reload: chat-end after the finale, then 6 s
     Reload --> Home
     [*] --> Setup: page load, no station saved
     Setup --> Home: server accepts the station and key
@@ -174,15 +187,18 @@ Any scene can go to Setup or Closed, not only Home. Neither leaves by itself.
 - **Whose message.** A message is the visitor's own when its `station` is the station this screen connected as (`socketService.station`). Names aren't compared, because both visitors can type the same name (P8 in [todo.md](todo.md)).
 - **Own message.** A bubble with the typed text appears at once, with a pulsing "waiting" style. When `response-message` comes back with the visitor's own station, the bubble whose text equals `prompt` is rewritten in place. If none matches (a ghost message), a new bubble is added on the visitor's side. If the ack says `{delivered: false}`, the bubble stops pulsing, fades out over 6 s (`MESSAGE_FADE_MS`), and is removed. The older bubbles above it move down into its place. A fading bubble is left out of the history and out of reply matching.
 - **Partner's message.** Added as a new bubble, with a sound.
-- **Layout.** Bubbles stack up from the bottom of the chat, newest at the bottom. [`Chat.layout`](src/web/static/js/chat.js#L59-L69) places every bubble again, from its place in the list and its height, whenever a bubble is added, rewritten or removed. A rewrite can come back after the partner's next message, so the bubble it replaces isn't always the newest. It stays where it was sent, and the older bubbles move to fit its new height.
+- **Layout.** Bubbles stack up from the bottom of the chat, newest at the bottom. [`Chat.layout`](src/web/static/js/chat.js#L78-L88) places every bubble again, from its place in the list and its height, whenever a bubble is added, rewritten or removed. A rewrite can come back after the partner's next message, so the bubble it replaces isn't always the newest. It stays where it was sent, and the older bubbles move to fit its new height.
 - **Tones.** Every `response-message` replaces the slider's two tones on both screens, always with a pair other than the one they showed.
-- **History.** Each event carries up to the last 10 messages, minus the newest one, as `{name, content}`. The server keeps no history of its own, and uses at most the last 10 entries it's sent.
+- **History.** Each event carries recent messages as `{name, content}`. A typed message carries up to 9, leaving out the newest bubble, which is its own prompt. A ghost message and the finale carry the last 10, including the newest, which they answer (F5). The server keeps no history of its own, and uses at most the last 10 entries it's sent.
 - **Message length.** The chat input's `maxlength` is the server's `MAX_MESSAGE_LENGTH` (500), which `route_home` passes to the template, so the two can't drift apart. The server drops a longer message, and its bubble fades out.
-- **Ghost timer.** After the partner's message, or from the start of the chat, the client waits 30–45 s, measured with `performance.now()`. If the visitor hasn't sent anything by then, it emits `send-ghost-message`. The delay is chosen once per page load, and the waiting flag carries over from the previous chat (F6 in [todo.md](todo.md)).
+- **Ghost timer.** After the partner's message, or from the start of the chat, the client waits for a silence, measured with `performance.now()`. If the visitor hasn't sent anything by then, it emits `send-ghost-message`. The silence is 30–45 s at the start of the chat, chosen for each chat, and halves for every minute between the start of the chat and the start of the silence ([`ghostDelay`](src/web/static/js/chat.js#L214-L219), `GHOST_DELAY_HALF_LIFE_MS`). So ghost messages come exponentially more often, until they come as fast as OpenAI writes them, about every 4 s. Sending a message, typed or ghost, stops the timer until the partner's next message. Only one ghost message per screen is with the server at a time, and a dropped one starts a new silence.
+- **Finale.** At 5 minutes (`FINALE_AT_MS`), counted from the `room` event on both screens, single ghost messages and typing stop. The screen whose visitor is next asks for the finale with `send-ghost-burst` ([`finale`](src/web/static/js/chat.js#L221-L226)), once its own last ghost message is back. If both screens think their visitor is next, both ask, and the server takes the first. The server's burst arrives as ordinary `response-message`s, so Chat shows it like any other messages. Then comes `chat-end`, and each screen reloads back to Home once it has been 6 s without a message (`CHAT_END_HOLD_MS`, [`endChat`](src/web/static/js/chat.js#L233-L243)).
+  - The reload closes the socket, so the partner gets `userdisconnect`, which the finale ignores ([`onPartnerLeft`](src/web/static/js/chat.js#L169-L177)): it goes home after the pause too. A reconnect in the finale reloads at once, since the server forgot the chat with the old socket.
+  - If `chat-end` never comes, say because the partner's screen froze before asking, each screen goes home 90 s into the finale anyway (`FINALE_MAX_MS`).
 
 ## 4. Socket protocol
 
-The client uses Socket.IO 4.6.1 and the server python-socketio 5.17.0, on the default namespace. The only authentication is the station key in the handshake. `send-message` is the only event the client asks to be acknowledged. There are no error events. The heartbeat uses the defaults (25 s ping interval plus 20 s timeout), so a silently dead client is noticed after about 45 s.
+The client uses Socket.IO 4.6.1 and the server python-socketio 5.17.0, on the default namespace. The only authentication is the station key in the handshake. The client asks for acks on `send-message`, `send-ghost-message` and `send-ghost-burst`, and only acts on the first two. There are no error events. The heartbeat uses the defaults (25 s ping interval plus 20 s timeout), so a silently dead client is noticed after about 45 s.
 
 ### Client → server
 
@@ -192,7 +208,8 @@ The client uses Socket.IO 4.6.1 and the server python-socketio 5.17.0, on the de
 | `login` | `{userName}` | End any current session, then take the waiting slot or pair with whoever holds it |
 | `logout` | none | End the session. The partner gets `logout` |
 | `send-message` | see below | Rewrite through OpenAI, emit `response-message` to the room, and ack `{delivered: true}`. Ack `{delivered: false}` if the message is dropped |
-| `send-ghost-message` | same, without `message` | Write a message on the sender's behalf, emit `response-message` to the room |
+| `send-ghost-message` | same, without `message` | Write a message on the sender's behalf, emit `response-message` to the room, and ack `{delivered}` as for `send-message` |
+| `send-ghost-burst` | same, without `message` | The finale, once per chat. Write 16 messages for both visitors in one OpenAI call, emit them to the room one by one as `response-message`, faster and faster, then `chat-end`. `chat-end` goes out even if the burst fails. A second request for the same chat is acked `{delivered: false}` at once |
 
 ```jsonc
 // send-message
@@ -218,6 +235,7 @@ The server rewrites the message to sound `max(tone1Value, tone2Value)`% more lik
 | `response-message` | Both, via the room | See below |
 | `userdisconnect` | The partner | `{message: "user disconnected."}` |
 | `logout` | The partner | `{message: "user has logged out."}` |
+| `chat-end` | Both, via the room | `{}`. The finale is over, or failed |
 
 ```jsonc
 // response-message
@@ -225,7 +243,7 @@ The server rewrites the message to sound `max(tone1Value, tone2Value)`% more lik
   "message": "Good afternoon. How are you?",   // rewritten text
   "userName": "Ana",                           // sender, as the sender's client claimed
   "station": "A",                              // sender's station, set by the server. Tells whose message it is
-  "prompt": "hi, how are you?",                // original text, "" for ghost messages
+  "prompt": "hi, how are you?",                // original text, "" for ghost and finale messages
   "tone1": { "name": "Humorous", "color": { "r": 255, "g": 255, "b": 28 } },
   "tone2": { "name": "Serious",  "color": { "r": 0,   "g": 195, "b": 255 } },
   "color": "#3a8fb0"                           // not used by the client
@@ -281,7 +299,7 @@ sequenceDiagram
     participant S as Server
     participant B as Installation B
     S-->>A: response-message from Ben
-    Note over A: ghost timer starts, 30 to 45 s
+    Note over A: ghost timer starts, 30 to 45 s,<br/>halved for every minute of chat
     Note over A: Ana doesn't type anything
     A->>S: send-ghost-message {userName, tone, messageHistory}
     Note over S: same pipeline as send-message,<br/>asks for the next message on behalf of Ana
@@ -290,7 +308,7 @@ sequenceDiagram
     Note over B: Ben's ghost timer starts
 ```
 
-If neither visitor types, the two installations keep answering each other. See F4 in [todo.md](todo.md).
+If neither visitor types, the two installations keep answering each other, faster and faster, until the finale at 5 minutes.
 
 ### Ending a chat
 
@@ -311,6 +329,20 @@ sequenceDiagram
     else Ana's socket reconnects
         Note over S: the new socket replaces station A's old one,<br/>Ben gets userdisconnect as above
         A->>S: login with a new session id, back to Waiting
+    else the chat reaches 5 minutes
+        Note over A,B: no more single ghost messages or typing
+        Note over A: Ben spoke last, so Ana is next
+        A->>S: send-ghost-burst {userName, tone, messageHistory}
+        Note over S: one OpenAI call writes 16 messages,<br/>Ana, Ben, Ana… (about 11 s)
+        loop 16 times, gaps from 2 s down to 0.2 s
+            S-->>A: response-message
+            S-->>B: response-message
+        end
+        S-->>A: chat-end
+        S-->>B: chat-end
+        Note over A,B: 6 s without a message
+        A->>A: reload, back to Home
+        B->>B: reload, back to Home
     end
 ```
 
@@ -322,7 +354,7 @@ sequenceDiagram
 | 2 | Get paired | A second visitor logs in while the first is waiting | Both screens show "You are talking to …" | `room` |
 | 3 | Send a message | The visitor types and presses send | The bubble appears at once, then is replaced with the rewritten text. The partner sees only the rewritten text. Both sliders get new tones | `send-message`, `response-message` |
 | 4 | Choose a tone | The visitor drags the slider | The next message is rewritten toward the stronger tone. The send button takes the slider color | none until the next send |
-| 5 | Stay silent | 30–45 s without sending after the partner's message, or after the chat starts | The AI writes a message for the silent visitor | `send-ghost-message`, `response-message` |
+| 5 | Stay silent | 30–45 s without sending after the partner's message, or after the chat starts. The silence halves with every minute of chat | The AI writes a message for the silent visitor. Later in the chat it answers before a visitor can type | `send-ghost-message`, `response-message` |
 | 6 | Leave on purpose | The visitor presses X | Both installations go back to Home | `logout`, then `logout` to the partner |
 | 7 | Walk away | The page closes, the browser crashes or the power goes | The partner goes back to Waiting, after up to ~45 s if the client died without closing | `userdisconnect` |
 | 8 | Network blip | The socket reconnects | Both clients log in again and are paired again. The conversation is cleared | `userdisconnect`, `login`, `room` |
@@ -333,6 +365,7 @@ sequenceDiagram
 | 13 | A station opened twice | Both iPads are set up as station A | The one that connected last takes the station. The other shows Closed until someone presses "Use this screen" or "Change station" | `disconnect` to the first |
 | 14 | A message fails | OpenAI refuses or fails, a limit drops it, or the partner leaves meanwhile | The bubble fades out over 6 s and is removed. The partner sees nothing | `send-message`, ack `{delivered: false}` |
 | 15 | Same name | Both visitors type the same name | Each screen still shows its own messages on the right and the partner's on the left, and only the screen that received the last message runs the ghost timer. Both headers say "You are talking to" that name | `room`, `response-message` |
+| 16 | The chat runs out | 5 minutes after the two visitors were paired | Typing and single ghost messages stop. After about 11 s a burst of 16 ghost messages for both visitors arrives, faster and faster, then stops. 6 s later both screens reload to Home | `send-ghost-burst`, `response-message`, `chat-end` |
 
 ## 7. Flaws and risks
 
