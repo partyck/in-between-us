@@ -3,6 +3,8 @@ let home;
 let login;
 let waiting;
 let chat;
+let closed;
+let setupScene;
 let c;
 
 let userName;
@@ -10,13 +12,6 @@ let recipientName;
 let currentScene;
 let timerToRefresh = 60 * 60;
 
-
-const SCENES = Object.freeze({
-  HOME: Symbol("Home"),
-  LOGIN: Symbol("Login"),
-  CHAT: Symbol("Chat"),
-  WAITING: Symbol("Waiting")
-});
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
@@ -33,55 +28,32 @@ function init() {
   login = new LoginScene();
   waiting = new Waiting();
   chat = new Chat();
-  changeScene(SCENES.HOME);
+  closed = new Closed();
+  setupScene = new Setup();
+
+  let credentials = setupScene.savedCredentials();
+  if (credentials) {
+    socketService.connect(credentials);
+    changeScene(home);
+  }
+  else {
+    setupScene.show();
+  }
 }
 
 function draw() {
-  switch (currentScene) {
-    case SCENES.HOME:
-      home.display();
-      break;
-    case SCENES.LOGIN:
-      login.display();
-      updateTimer();
-      break;
-    case SCENES.WAITING:
-      waiting.display();
-      updateTimer();
-      break;
-    case SCENES.CHAT:
-      chat.display();
-      break;
-    default:
-      break;
-  }
+  // pop() undoes whatever drawing state the scene set, so it can't leak into another scene.
+  push();
+  currentScene.draw();
+  pop();
+  // console.log(frameRate());
 }
 
 function changeScene(newScene) {
-  switch (newScene) {
-    case SCENES.HOME:
-      home.show();
-      break;
-    case SCENES.LOGIN:
-      login.show();
-      break;
-    case SCENES.WAITING:
-      waiting.show();
-      break;
-    case SCENES.CHAT:
-      chat.show();
-      break;
-    default:
-      break;
-  }
+  currentScene?.exit();
   currentScene = newScene;
+  currentScene.enter();
   timerToRefresh = 60 * 60;
-}
-
-function backHome() {
-  userName = null;
-  recipientName = null;
-  init();
 }
 
 function updateTimer() {

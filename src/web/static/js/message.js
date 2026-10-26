@@ -1,15 +1,25 @@
+// Messages are measured when they're created, outside draw(), so measuring and drawing both set this style.
+const MESSAGE_FONT = 'Arial';
+const MESSAGE_TEXT_SIZE = 16;
+// How long the bubble of a message the server dropped takes to fade out (P1).
+const MESSAGE_FADE_MS = 6000;
+// Space between the text of two bubbles. Each bubble's background reaches 8 px past its text, so 4 px of it shows.
+const MESSAGE_GAP = 20;
+
 class Message {
-	constructor(content, newUserName, bgColor = c.receivedMessageC, isWaiting = true) {
+	// `station` is the sender's. It decides the side, since both visitors can have the same name (P8).
+	constructor(content, newUserName, station, bgColor = c.receivedMessageC, isWaiting = true) {
 		this.MAX_MESSAGE_WIDTH = width * 0.8;
 		this.MAX_MESSAGE_HEIGHT = height - 100 - height * 0.05 - 30;
 		this.content = content;
 		this.userName = newUserName;
+		this.station = station;
 		this.calculateTextWidthAndHeight();
 		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.animation_s = 80;
 		this.bgColor = bgColor;
 
-		if (this.userName === userName) {
+		if (this.station === socketService.station) {
 			this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 			this.strokeColor = color(255);
 			this.waiting = isWaiting;
@@ -23,21 +33,52 @@ class Message {
 	rephrase(newContent) {
 		this.waiting = false;
 		this.content = newContent;
-		let old_height = this.height;
 		this.calculateTextWidthAndHeight();
-		this.y = this.MAX_MESSAGE_HEIGHT - this.height;
 		this.x = this.width < this.MAX_MESSAGE_WIDTH ? width - this.width - 10 : width - this.MAX_MESSAGE_WIDTH - 10;
 		this.animation_s = 50;
 		this.bgColor = c.sendMessageBGC2;
 		this.strokeColor = color(255);
-		return old_height - this.height;
 	}
 
-	move(displacement) {
-		this.y = this.y - (displacement) - 20;
+	// Puts the bubble just above `below`, the next newer bubble, or at the bottom of the chat when there's none.
+	placeAbove(below) {
+		const bottom = below ? below.y - MESSAGE_GAP : this.MAX_MESSAGE_HEIGHT;
+		this.y = bottom - this.height;
+	}
+
+	// The server dropped this message. Chat removes the bubble once it has faded out. It stops pulsing first: the pulse
+	// draws 50 stacked layers, which would add up to a solid middle while only the edges faded.
+	fadeOut() {
+		this.waiting = false;
+		this.fadeStartedAt = performance.now();
+	}
+
+	isFading() {
+		return this.fadeStartedAt !== undefined;
+	}
+
+	// Written so that a NaN keeps the bubble: NaN >= anything is false.
+	isGone() {
+		return this.isFading() && performance.now() - this.fadeStartedAt >= MESSAGE_FADE_MS;
+	}
+
+	// 1 until the bubble starts fading, then down to 0 over MESSAGE_FADE_MS.
+	opacity() {
+		if (!this.isFading()) return 1;
+		const elapsed = performance.now() - this.fadeStartedAt;
+		if (!(elapsed >= 0)) return 1;
+		return Math.max(0, 1 - elapsed / MESSAGE_FADE_MS);
 	}
 
 	display() {
+		// globalAlpha fades everything the bubble draws. pop() puts it back, and p5 resyncs its cached fill there.
+		push();
+		drawingContext.globalAlpha = this.opacity();
+		this.drawBubble();
+		pop();
+	}
+
+	drawBubble() {
 		noStroke();
 		const padding = 8;
 		let currentFillColor;
@@ -98,6 +139,8 @@ class Message {
 	}
 
 	calculateTextWidthAndHeight() {
+		push();
+		textFont(MESSAGE_FONT, MESSAGE_TEXT_SIZE);
 		const lines = this.content.split('\n');
 		let lineCount = 0;
 		let maxWidth = 0;
@@ -127,7 +170,6 @@ class Message {
 
 		this.height = lineCount * textLeading();
 		this.width = maxWidth;
-
-		return lineCount * textLeading();
+		pop();
 	}
 }

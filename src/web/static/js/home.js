@@ -1,115 +1,266 @@
-const title = 'In between us.';
+// The maths that runs every frame in this scene is plain Math, not p5's helpers (random, constrain, dist, lerpColor,
+// sin...). Once Safari had optimised repelFromPointer written with p5's dist, atan2 and map, it pushed bubbles to NaN
+// on the iPads, though the same numbers worked out fine anywhere else. A bubble at NaN makes display() throw, and that
+// stops the sketch.
+const HOME_TEXT_SIZE = 24;
 
-class Home {
+class Home extends Scene {
   constructor() {
-    textSize(24);
-    this.blurAmount = 1;
-    this.logoCovered = false;
-    this.logoIcon = createSpan(title);
-    this.logoIcon.class('logo-icon');
-    this.logoIcon.addClass('unselectable');
+    super('home-scene');
 
-    this.logoIcon.hide();
-    this.logoIcon.mousePressed(() => {
-      if (this.clicEenable) {
-        this.logoIcon.hide();
-        changeScene(SCENES.LOGIN);
-      }
-    });
-
-    let bubblesLength = width * height * 0.001;
+    const bubblesLength = width * height * 0.0002;
     this.bubbles = [];
     for (let i = 0; i < bubblesLength; i++) {
       let x = random(width);
       let y = random(height);
-      let r = random(5, 20);
+      let r = random(20, 100);
       this.bubbles.push(new Bubble(x, y, r));
     }
+    // BubbleM measures its text when it's created, so it needs the text size draw() uses.
+    push();
+    textSize(HOME_TEXT_SIZE);
+    this.m1 = new BubbleM(width * 0.5, height * 0.5, "touch here to connect", color(0, 242, 96), color(255));
+    pop();
+    // Set by leave() once the button is touched.
+    this.leaving = false;
   }
 
-  get clicEenable() {
-    return this.logoCovered && this.blurAmount <= 0;
-  }
-
-  show() {
-    textSize(24);
-    colorMode(HSL);
-    this.logoIcon.show();
-  }
-
-  display() {
+  draw() {
+    textSize(HOME_TEXT_SIZE);
+    rectMode(CENTER);
     background(c.bgColor);
-    this.logoIcon.style('filter', `blur(${this.blurAmount * 10}px)`);
 
-    if (this.blurAmount > 0) {
-      this.blurAmount -= 0.005;
-    }
+    this.m1.move();
+    this.m1.repel();
+    this.m1.display();
+    this.m1.update();
 
     for (let bubble of this.bubbles) {
-      bubble.move();
-      bubble.repel();
-      bubble.display(this.blurAmount);
+      // move() keeps a bubble on screen, so it stops once they start leaving.
+      if (this.leaving) {
+        bubble.fly();
+      } else {
+        bubble.move();
+        bubble.repel();
+      }
+      bubble.display();
     }
 
-    this.bubblesCoilide();
+    if (this.leaving) {
+      if (this.bubbles.every(bubble => bubble.isOffScreen())) {
+        changeScene(login);
+      }
+    }
+    // The button only works once it has grown to full size and its text is in focus.
+    else if (this.m1.isReady() && this.m1.isHovered()) {
+      this.leave();
+    }
   }
 
-  bubblesCoilide() {
-    let { x: bX, y: bY } = this.logoIcon.position();
-    let bW = this.logoIcon.elt.offsetWidth;
-    let bH = this.logoIcon.elt.offsetHeight;
-    this.logoCovered = !this.bubbles.some((bubble) => {
-      return bubble.colides(bX - bW * 0.5, bY - bH * 0.5, bW, bH);
-    });
-
-    if (this.clicEenable) {
-      let buttonHue = frameCount % 360;
-      this.logoIcon.style("text-shadow", `2px 2px 9px hsl(${buttonHue}deg 100 50)`);
-      this.logoIcon.addClass('mousePointer');
-    } else {
-      this.logoIcon.style("text-shadow", `0px 0px 0px rgb(0 0 0 / 0%)`);
-      this.logoIcon.removeClass('mousePointer');
+  // Sends every bubble but the button off screen, away from where it was touched. Once they're all gone, draw()
+  // moves on to the login scene.
+  leave() {
+    this.leaving = true;
+    for (let bubble of this.bubbles) {
+      bubble.flee(mouseX, mouseY);
     }
   }
 }
 
+
+// A bubble looks like r stacked circles of alpha 6/255 (radii 0..r): a point at distance d from the
+// centre is under r - d of them, so its opacity is 1 - (1 - 6/255)^(r - d). A radial gradient following
+// that curve draws the same thing in one fill instead of r.
+const BUBBLE_LAYER_ALPHA = 6 / 255;
+const BUBBLE_GRADIENT_STOPS = 10;
+// How fast the bubbles leave once the button is touched, in sketch pixels per ms.
+const BUBBLE_FLEE_SPEED = 1;
 
 class Bubble {
   constructor(x, y, r) {
     this.x = x;
     this.y = y;
     this.r = r;
-  }
+    const selectionIndex = Math.floor(Math.random() * (c.tones.length));
+    const selection = c.tones[selectionIndex];
+    selection.selected++;
+    // { r, g, b } from 0 to 255.
+    this.c1 = selection.toneA.rgb;
+    this.c2 = selection.toneB.rgb;
+    this.osc = 0;
 
-  move() {
-    this.y = constrain(this.y + random(-1, 1), 20, height - 20);
-    this.x = constrain(this.x + random(-1, 1), 20, width - 20);
-  }
-
-  repel() {
-    let d = dist(this.x, this.y, mouseX, mouseY);
-    if (d < this.r * 6) {
-      let angle = atan2(this.y - mouseY, this.x - mouseX);
-      let force = map(d, 0, this.r * 6, 3, 0);
-      this.x += cos(angle) * force;
-      this.y += sin(angle) * force;
+    this.falloff = [];
+    for (let i = 0; i <= BUBBLE_GRADIENT_STOPS; i++) {
+      const offset = i / BUBBLE_GRADIENT_STOPS;
+      const layers = r * (1 - offset);
+      this.falloff.push([offset, 1 - Math.pow(1 - BUBBLE_LAYER_ALPHA, layers)]);
     }
   }
 
-  display() {
-    noFill();
-    stroke('#2663fc');
-    strokeWeight(2);
-    ellipse(this.x, this.y, this.r * 2);
+  move() {
+    this.y = wander(this.y, 20, height - 20);
+    this.x = wander(this.x, 20, width - 20);
   }
 
-  colides(buttonX, buttony, buttonWidth, buttonHeigth) {
-    // returns true if it colides with the logo
-    let closestX = constrain(this.x, buttonX, buttonX + buttonWidth);
-    let closestY = constrain(this.y, buttony, buttony + buttonHeigth);
-    let distanceX = this.x - closestX;
-    let distanceY = this.y - closestY;
-    let distanceSquared = distanceX * distanceX + distanceY * distanceY;
-    return distanceSquared < this.r * this.r;
+  repel() {
+    repelFromPointer(this, this.r);
+  }
+
+  // Heads straight away from (x, y) for fly() to follow. A bubble right on the point picks a direction at random.
+  flee(x, y) {
+    const dx = this.x - x;
+    const dy = this.y - y;
+    const angle = dx === 0 && dy === 0 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+    this.vx = Math.cos(angle) * BUBBLE_FLEE_SPEED;
+    this.vy = Math.sin(angle) * BUBBLE_FLEE_SPEED;
+  }
+
+  fly() {
+    // Driven by deltaTime (ms since the last frame), so the bubbles leave as fast at any frame rate.
+    this.x += this.vx * deltaTime;
+    this.y += this.vy * deltaTime;
+  }
+
+  isOffScreen() {
+    return this.x + this.r < 0 || this.x - this.r > width || this.y + this.r < 0 || this.y - this.r > height;
+  }
+
+  display() {
+    // lerpColor(c1, c2, osc).levels, worked out by hand.
+    const { c1, c2, osc } = this;
+    const red = Math.round(c1.r + (c2.r - c1.r) * osc);
+    const green = Math.round(c1.g + (c2.g - c1.g) * osc);
+    const blue = Math.round(c1.b + (c2.b - c1.b) * osc);
+    const gradient = drawingContext.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r);
+    for (const [offset, alpha] of this.falloff) {
+      gradient.addColorStop(offset, `rgba(${red}, ${green}, ${blue}, ${alpha})`);
+    }
+    // save/restore so setting fillStyle directly doesn't leave p5's cached fill out of sync.
+    drawingContext.save();
+    drawingContext.fillStyle = gradient;
+    drawingContext.beginPath();
+    drawingContext.arc(this.x, this.y, this.r, 0, TWO_PI);
+    drawingContext.fill();
+    drawingContext.restore();
+    this.osc = (Math.sin(frameCount * (this.r / 10000)) + 1) / 2;
+  }
+}
+
+// One step of a random walk: moves value by up to 1 either way, then keeps it within [low, high].
+function wander(value, low, high) {
+  return Math.max(Math.min(value + Math.random() * 2 - 1, high), low);
+}
+
+// Pushes something at (x, y) away from the pointer once it's within 3r of it, harder the closer it gets.
+function repelFromPointer(bubble, r) {
+  const dx = bubble.x - mouseX;
+  const dy = bubble.y - mouseY;
+  const d = Math.hypot(dx, dy);
+  const strength = 3;
+  if (d < r * strength) {
+    const angle = Math.atan2(dy, dx);
+    // 3 at the pointer, down to 0 at r * strength.
+    const force = 3 - 3 * d / (r * strength);
+    bubble.x += Math.cos(angle) * force;
+    bubble.y += Math.sin(angle) * force;
+  }
+}
+
+const BUBBLE_M_GROW_MS = 10000;
+// Once grown, the text fades in from this blur (a shadowBlur, in sketch pixels) to sharp over BUBBLE_M_FOCUS_MS.
+const BUBBLE_M_FOCUS_MS = 3000;
+const BUBBLE_M_TEXT_BLUR = 20;
+
+class BubbleM {
+  constructor(x, y, content, color, sc) {
+    this.x = x;
+    this.y = y;
+    this.w = textWidth(content) + 70;
+    this.h = textLeading() + 28;
+    this.content = content;
+    this.c = color;
+    this.c.setAlpha(6);
+    this.strokeColor = sc;
+    // How far the button has grown towards its full size, from 0 to 1.
+    this.growth = 0;
+    // How far the text has come into focus after that, from 0 to 1.
+    this.focus = 0;
+  }
+
+  display() {
+    // The straight part between the round ends. It grows from nothing, so the button starts as a round bubble and
+    // stretches sideways until the text fits.
+    const core = (this.w - this.h) * this.growth;
+    noStroke();
+    fill(this.c);
+    const steps = 100;
+    rect(this.x, this.y, core + this.h, this.h, this.h * 0.5);
+    for (let i = 0; i < steps; i++) {
+      const rectHeight = this.h * i / steps;
+      // Circles at first. Fully grown, each layer is (w - h) + rectHeight * 0.5 wide.
+      const rectWidth = Math.max(0, core - rectHeight * 0.5) + rectHeight;
+      rect(this.x, this.y, rectWidth, rectHeight, 30);
+    }
+
+    // The text only appears once the button is big enough to hold it.
+    if (this.isGrown()) {
+      this.displayText();
+    }
+  }
+
+  displayText() {
+    const x = this.x - textWidth(this.content) / 2;
+    const y = this.y + 6;
+    fill(this.strokeColor);
+    if (this.isReady()) {
+      text(this.content, x, y);
+      return;
+    }
+    // Safari ignores drawingContext.filter, but it does blur shadows. So the text is drawn a canvas width to the
+    // left, off screen, and only its shadow is shifted back into place. Shadows ignore the canvas transform, so
+    // their offset and blur are in device pixels, pixelDensity() times the sketch's.
+    const [red, green, blue] = this.strokeColor.levels;
+    const shift = width;
+    push();
+    drawingContext.shadowColor = `rgba(${red}, ${green}, ${blue}, ${this.focus})`;
+    drawingContext.shadowBlur = (1 - this.focus) * BUBBLE_M_TEXT_BLUR * pixelDensity();
+    drawingContext.shadowOffsetX = shift * pixelDensity();
+    text(this.content, x - shift, y);
+    pop();
+  }
+
+  move() {
+    // Same random walk as Bubble.move, but the margin is half the button so it never slides off screen.
+    this.y = wander(this.y, this.h * 0.5, height - this.h * 0.5);
+    this.x = wander(this.x, this.w * 0.5, width - this.w * 0.5);
+  }
+
+  repel() {
+    // Reacts like a bubble as wide as the button.
+    repelFromPointer(this, this.w * 0.5);
+  }
+
+  update() {
+    // Driven by deltaTime (ms since the last frame), so each step takes as long at any frame rate.
+    if (!this.isGrown()) {
+      this.growth = Math.min(this.growth + deltaTime / BUBBLE_M_GROW_MS, 1);
+    } else {
+      this.focus = Math.min(this.focus + deltaTime / BUBBLE_M_FOCUS_MS, 1);
+    }
+  }
+
+  isGrown() {
+    return this.growth >= 1;
+  }
+
+  isReady() {
+    return this.focus >= 1;
+  }
+
+  isHovered() {
+    // display() draws with rectMode(CENTER), so (x, y) is the button's centre, not its corner.
+    const isOverX = Math.abs(mouseX - this.x) < this.w * 0.5;
+    const isOverY = Math.abs(mouseY - this.y) < this.h * 0.5;
+    return isOverX && isOverY;
   }
 }

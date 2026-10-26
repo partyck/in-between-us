@@ -1,13 +1,24 @@
+import os
 import tomllib
+from pathlib import Path
 
 from models import ToneOptions
 
-with open("config.toml", mode="rb") as fp:
-    config = tomllib.load(fp)
+# Optional, for local development only. The Docker image leaves it out (see .dockerignore).
+CONFIG_PATH = Path(__file__).with_name("config.toml")
+config = tomllib.loads(CONFIG_PATH.read_text(encoding="utf-8")) if CONFIG_PATH.exists() else {}
 
-# openIA
-OPENIA_API_KEY: str = config["openia_api_key"]
-DB_ROOMS: str = "rooms-" + config["dever"]
+# On Cloud Run the key comes from Secret Manager as OPENAI_API_KEY.
+# Locally it can also be set in config.toml. With neither, the OpenAI client fails at startup.
+OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY") or config.get("openai_api_key")
+# Only the two installations may connect. Each is set up once as station A or B with the station key (setup.js), and
+# the server rejects any other socket. The key comes from Secret Manager as STATION_KEY on Cloud Run, or from
+# config.toml locally.
+STATIONS = ("A", "B")
+STATION_KEY: str | None = os.environ.get("STATION_KEY") or config.get("station_key")
+# Development mode: restart on code changes, log requests and reload templates. Off unless DEBUG=1.
+# Only the dev container sets it. The Docker image and Cloud Run never do.
+DEBUG: bool = os.environ.get("DEBUG") == "1"
 
 TONES = [
     ("Friendly", "Hostile"),
@@ -62,7 +73,8 @@ TONES_BY_NAME = {tone.tone_a.name: tone.tone_a for tone in TONES_WC} | {
     tone.tone_b.name: tone.tone_b for tone in TONES_WC
 }
 
-
-TONES_PROMPT = "The possible tones of conversation are: " + "; ".join(
-    [f"{tone.tone_a.name}, {tone.tone_b.name}" for tone in TONES_WC]
-)
+# Each pair of opposite tones under the name OpenAI picks it by, e.g. "Informal / Formal". OpenAI can only answer with
+# one of these names (message_response_format in models.py), so a pair never comes back mixed or misspelled.
+TONE_PAIRS = {f"{pair.tone_a.name} / {pair.tone_b.name}": pair for pair in TONES_WC}
+# Tone name -> the name of its pair, to find the pair a slider shows from the tones a message carries.
+TONE_PAIR_OF = {tone.name: name for name, pair in TONE_PAIRS.items() for tone in (pair.tone_a, pair.tone_b)}

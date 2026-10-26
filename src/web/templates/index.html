@@ -4,7 +4,8 @@
 <head>
   <meta charset="UTF-8">
   <!-- Progressive web app configuration -->
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <!-- <meta name="apple-mobile-web-app-capable" content="yes"> -->
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="path/to/your/app-icon.png">
   <link rel="apple-touch-startup-image" href="path/to/your/startup-image.png">
@@ -26,32 +27,72 @@
 </head>
 
 <body>
-  <!-- Login elements -->
-  <div id="form" class="login-container hidden">
-    <input id="name-input" type="text" class="name-input" placeholder="Tell me your name... ">
-    <button class="login-button">ok</button>
-  </div>
+  <!-- <div class="message-bubble">
+    <p>This is a blue meskdnl;f asdlkjh a;lsdh f;laskh lkajsdh lkjashdlkfjashdk jfflshsage bubble!</p>
+  </div> -->
 
-  <!-- Chat elements -->
-  <div class="header-container hidden">
-    <span class="recipient-name"> my name is Gemini</span>
-    <button class="home-button">X</button>
-  </div>
+  <!-- Each scene's DOM elements, shown while the scene is current (see scene.js) -->
+  <section id="home-scene" class="hidden"></section>
 
-  <div class="input-message-container hidden">
-    <textarea class="chat-input"></textarea>
-    <button class="send-button">
-      <img alt="send message" src="assets/message.png" class="send-icon">
-    </button>
-  </div>
+  <section id="login-scene" class="hidden">
+    <div class="login-container">
+      <input id="name-input" type="text" class="name-input" maxlength="{{ max_name_length }}" placeholder="Tell me your name... ">
+      <button class="login-button">ok</button>
+    </div>
+  </section>
+
+  <section id="waiting-scene" class="hidden">
+    <span class="waiting-text unselectable">Waiting for someone to join.</span>
+  </section>
+
+  <section id="chat-scene" class="hidden">
+    <div class="header-container">
+      <span class="recipient-name"> my name is Gemini</span>
+      <button class="home-button">X</button>
+    </div>
+
+    <div class="input-message-container">
+      <textarea class="chat-input" maxlength="{{ max_message_length }}"></textarea>
+      <button class="send-button">
+        <img alt="send message" src="assets/message.png" class="send-icon">
+      </button>
+    </div>
+  </section>
+
+  <section id="setup-scene" class="hidden">
+    <div class="notice-container">
+      <span class="notice-text unselectable">Set up this installation</span>
+      <div class="button-row">
+        <button class="plain-button station-button" data-station="A">A</button>
+        <button class="plain-button station-button" data-station="B">B</button>
+      </div>
+      <input id="station-key-input" type="text" class="name-input" placeholder="Station key" autocomplete="off"
+        autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button class="plain-button setup-save-button">ok</button>
+      <span class="setup-message"></span>
+    </div>
+  </section>
+
+  <section id="closed-scene" class="hidden">
+    <div class="notice-container">
+      <span class="notice-text unselectable">This installation was opened on another screen.</span>
+      <div class="button-row">
+        <button class="plain-button closed-reload-button">Use this screen</button>
+        <button class="plain-button closed-setup-button">Change station</button>
+      </div>
+    </div>
+  </section>
 
   <script src="js/main.js"></script>
   <script src="js/sockets.js"></script>
+  <script src="js/scene.js"></script>
   <script src="js/home.js"></script>
   <script src="js/loginScene.js"></script>
   <script src="js/waiting.js"></script>
   <script src="js/message.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/closed.js"></script>
+  <script src="js/setup.js"></script>
   <script src="js/constants.js"></script>
   <script src="js/tone.js"></script>
   <script src="js/sounds.js"></script>
