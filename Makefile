@@ -9,7 +9,7 @@ SERVICE ?= in-between-us
 DOMAIN ?=
 GCLOUD = gcloud --configuration=$(GCLOUD_CONFIG) --project=$(PROJECT)
 
-.PHONY: run secrets station-key deploy domain gcp
+.PHONY: run secrets station-key deploy domain delete gcp
 
 # local server, with the keys from src/config.toml (deployment.md)
 run:
@@ -37,6 +37,16 @@ deploy: gcp
 domain: gcp
 	@test -n "$(DOMAIN)" || { echo "No domain: set DOMAIN at the top of the Makefile or pass DOMAIN=<subdomain>"; exit 1; }
 	$(GCLOUD) beta run domain-mappings create --service=$(SERVICE) --domain=$(DOMAIN) --region=$(REGION)
+
+# Deletes the service, then every domain mapping that points to it, so nothing is left to bill. gcloud asks before
+# deleting the service, and answering no stops here. Secrets, Firestore and the images stay: `make deploy` and
+# `make domain` bring it back. The DNS record in Cloudflare has to be removed by hand.
+delete: gcp
+	$(GCLOUD) run services delete $(SERVICE) --region=$(REGION)
+	for domain in $$($(GCLOUD) beta run domain-mappings list --region=$(REGION) \
+			--filter="spec.routeName=$(SERVICE)" --format="value(metadata.name)"); do \
+		$(GCLOUD) beta run domain-mappings delete --domain=$$domain --region=$(REGION) || exit 1; \
+	done
 
 gcp:
 	@test -n "$(PROJECT)" || { echo "No GCP project: set PROJECT at the top of the Makefile or pass PROJECT=<id>"; exit 1; }

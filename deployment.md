@@ -28,6 +28,7 @@ Run `make` from the repo root.
 | `make station-key` | Prints the station key, to type on the iPads. |
 | `make deploy` | Builds `src` with Cloud Build and deploys it to Cloud Run. |
 | `make domain DOMAIN=<subdomain>` | Maps a custom subdomain to the service. |
+| `make delete` | Deletes the service and its domain mappings (see [Shutting down](#shutting-down)). |
 
 - Every gcloud command in the Makefile uses the gcloud configuration `in-between-us`, which has the authors' private Google account, and the project `chat-ai-2025`. It never uses the active configuration or project, because on the dev Mac those are a work account.
 - The variables at the top can be overridden on the command line, e.g. `make deploy SERVICE=in-between-us-test`.
@@ -136,6 +137,29 @@ If the new revision fails to start, for example because a secret is missing or t
    ```
 
 The run.app URL keeps working alongside the domain.
+
+## Shutting down
+
+The service has no minimum instances, so it costs nothing while no one is connected. An open socket keeps an instance running and billed, though, and a home-screen app left open on an iPad reconnects forever. Between exhibitions, delete the service:
+
+```bash
+make delete
+```
+
+1. gcloud asks before it deletes the service. Answering no stops `make delete` there.
+2. It then deletes every domain mapping that points to the service, so the custom domain isn't left pointing at nothing.
+3. Remove the domain's `CNAME` in Cloudflare by hand, and close the app on both iPads.
+
+The secrets, Firestore and the images in `cloud-run-source-deploy` stay, and all of them fit in the free tier. To bring the installation back, run `make deploy`, then `make domain` and add the `CNAME` again ([Custom domain](#custom-domain)). The iPads keep their station and key, as long as the domain is the same.
+
+To remove the images and Cloud Build's uploads as well, which only cost cents:
+
+```bash
+gcloud artifacts repositories delete cloud-run-source-deploy --location=$REGION
+gcloud storage rm -r gs://run-sources-chat-ai-2025-europe-west1
+```
+
+`make deploy` creates both again, and asks first. Don't delete the project or turn off its billing: the bucket `assets-snp-test` in it belongs to something else.
 
 ## Earlier setup (removed)
 
